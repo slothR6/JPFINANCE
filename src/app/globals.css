@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --accent: #0f766e;
+  --accent-foreground: #f8fafc;
+  --muted: #e2e8f0;
+  --muted-foreground: #64748b;
+  --border: #dbe4ee;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+}
+
+.dark {
+  --background: #020617;
+  --foreground: #f8fafc;
+  --card: #0f172a;
+  --card-foreground: #f8fafc;
+  --accent: #2dd4bf;
+  --accent-foreground: #052e2b;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --border: #1f2937;
+  --success: #4ade80;
+  --warning: #f59e0b;
+  --danger: #fb7185;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-ibm-plex-sans), sans-serif;
+}
+
+* {
+  border-color: var(--border);
+}
+
+input,
+select,
+textarea {
+  @apply bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+}
+
+::selection {
+  background: rgba(20, 184, 166, 0.22);
+}
+
