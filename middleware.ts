@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const protectedPaths = [
+const PROTECTED = [
   "/dashboard",
   "/receitas",
   "/despesas",
@@ -12,16 +12,18 @@ const protectedPaths = [
 ];
 
 export function middleware(request: NextRequest) {
-  const authCookie = request.cookies.get("finance-auth")?.value;
+  const session = request.cookies.get("jpf-session")?.value;
   const { pathname } = request.nextUrl;
 
-  const isProtected = protectedPaths.some((path) => pathname.startsWith(path));
+  const isProtected = PROTECTED.some((p) => pathname.startsWith(p));
 
-  if (isProtected && !authCookie) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  if (isProtected && !session) {
+    const url = new URL("/login", request.url);
+    if (pathname !== "/dashboard") url.searchParams.set("next", pathname);
+    return NextResponse.redirect(url);
   }
 
-  if (pathname === "/login" && authCookie) {
+  if (pathname === "/login" && session) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
@@ -31,4 +33,3 @@ export function middleware(request: NextRequest) {
 export const config = {
   matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };
-

@@ -1,111 +1,105 @@
-export type ResponsiblePerson = "eu" | "esposa" | "ambos" | "nao-definido";
+export type CategoryKind = "income" | "expense";
 
-export type ExpenseStatus = "pendente" | "pago";
-
-export type ExpenseDisplayStatus = "pendente" | "pago" | "atrasado";
-
-export type DebtStatus = "ativa" | "negociada" | "quitada";
-
-export type FinancialHealth = "saudavel" | "atencao" | "estourado";
-
-export interface BaseEntity {
+export interface Category {
   id: string;
-  householdId: string;
-  createdAt: string;
-  updatedAt: string;
-  createdByEmail?: string | null;
-}
-
-export interface Income extends BaseEntity {
-  description: string;
-  amount: number;
-  date: string;
-  category: string;
-  responsible?: ResponsiblePerson;
-  isRecurring: boolean;
-  recurrenceKey?: string | null;
-  monthKey: string;
-}
-
-export interface Expense extends BaseEntity {
-  description: string;
-  amount: number;
-  category: string;
-  dueDate: string;
-  status: ExpenseStatus;
-  isRecurring: boolean;
-  recurrenceKey?: string | null;
-  notes?: string;
-  paidAt?: string | null;
-  responsible?: ResponsiblePerson;
-  monthKey: string;
-}
-
-export interface Debt extends BaseEntity {
   name: string;
-  creditor: string;
-  originalAmount: number;
-  currentAmount: number;
-  startDate: string;
-  notes?: string;
-  status: DebtStatus;
+  kind: CategoryKind;
+  color: string;
+  icon?: string;
+  order?: number;
+  archived?: boolean;
 }
 
-export interface DebtPayment extends BaseEntity {
+export interface Income {
+  id: string;
+  description: string;
+  amount: number;
+  categoryId: string;
+  receivedAt: string; // ISO date (yyyy-MM-dd)
+  recurring?: boolean;
+  note?: string;
+  createdAt?: string;
+}
+
+// "despesa" = regular/fixed expense (groceries, gas, subscriptions)
+// "gasto"   = day-to-day discretionary spending (lunch, coffee, entertainment)
+export type ExpenseKind = "despesa" | "gasto";
+
+export interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  categoryId: string;
+  paidAt: string; // ISO date
+  expenseKind?: ExpenseKind;
+  method?: "pix" | "cartao" | "dinheiro" | "boleto" | "transferencia" | "outros";
+  creditCardId?: string;
+  creditCardDueAt?: string; // ISO date - computed billing due date
+  note?: string;
+  createdAt?: string;
+}
+
+export type BillStatus = "pending" | "paid" | "overdue";
+
+export interface Bill {
+  id: string;
+  description: string;
+  amount: number;
+  categoryId?: string;
+  dueAt: string; // ISO date
+  paidAt?: string; // ISO date
+  status: BillStatus;
+  note?: string;
+  createdAt?: string;
+}
+
+// "negociada" = debt with known installments/terms (e.g. car financing)
+// "mapeada"   = debt you want to track but haven't negotiated yet
+export type DebtKind = "negociada" | "mapeada";
+
+export interface Debt {
+  id: string;
+  name: string;
+  creditor?: string;
+  debtKind: DebtKind;
+  totalAmount: number;
+  // Only required for "negociada" debts:
+  installments?: number;
+  paidInstallments?: number;
+  installmentAmount?: number;
+  firstDueAt?: string; // ISO date
+  interestRate?: number;
+  note?: string;
+  archived?: boolean;
+  createdAt?: string;
+}
+
+export interface DebtPayment {
+  id: string;
   debtId: string;
-  debtName: string;
-  creditor: string;
   amount: number;
-  paymentDate: string;
-  notes?: string;
+  paidAt: string; // ISO date
+  installmentNumber?: number;
+  note?: string;
+  createdAt?: string;
 }
 
-export interface Household {
+export interface CreditCard {
   id: string;
   name: string;
-  updatedAt: string;
+  lastDigits?: string;
+  closingDay: number; // day of month statement closes (1-28)
+  dueDay: number;     // day of month payment is due (1-28)
+  limit?: number;
+  color?: string;
+  archived?: boolean;
+  createdAt?: string;
 }
 
-export interface HouseholdSettings {
-  id: string;
-  householdId: string;
-  householdName: string;
-  monthlyBudget: number;
-  alertThreshold: number;
-  incomeCategories: string[];
-  expenseCategories: string[];
-  updatedAt: string;
+export interface UserPreferences {
+  displayName?: string;
+  currency: string; // "BRL"
+  monthlyBudget?: number;
+  savingsGoal?: number;
+  theme?: "light" | "dark" | "system";
 }
-
-export interface MonthlySummary {
-  totalIncome: number;
-  totalExpenses: number;
-  paidExpenses: number;
-  pendingExpenses: number;
-  overdueExpenses: number;
-  projectedBalance: number;
-  debtBalance: number;
-  paidDebtAmount: number;
-  health: FinancialHealth;
-}
-
-export interface PaymentTimelineItem {
-  id: string;
-  type: "despesa" | "divida";
-  description: string;
-  amount: number;
-  date: string;
-}
-
-export interface CategoryChartItem {
-  name: string;
-  value: number;
-}
-
-export interface EvolutionChartItem {
-  monthKey: string;
-  monthLabel: string;
-  income: number;
-  expenses: number;
-}
-

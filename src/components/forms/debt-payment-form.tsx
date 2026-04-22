@@ -1,85 +1,112 @@
 "use client";
 
-import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useToast } from "@/components/providers/toast-provider";
+import { COL, createItem, updateItem } from "@/services/repository";
+import type { Debt, DebtPayment } from "@/types";
+import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-field";
+import { Field, FieldRow } from "@/components/ui/field";
+import { Input, Textarea } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
+import { todayIso } from "@/lib/dates";
 
-function createPaymentSchema(maxAmount: number) {
-  return z.object({
-    amount: z.coerce
-      .number()
-      .positive("Informe um valor maior que zero.")
-      .max(maxAmount, "O pagamento não pode ser maior que o saldo atual."),
-    paymentDate: z.string().min(1, "Informe a data do pagamento."),
-    notes: z.string().optional(),
-  });
+const schema = z.object({
+  amount: z.number().positive(),
+  paidAt: z.string().min(1),
+  installmentNumber: z.coerce.number().int().optional(),
+  note: z.string().optional(),
+});
+type FormValues = z.infer<typeof schema>;
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  debt: Debt | null;
 }
 
-export function DebtPaymentForm({
-  maxAmount,
-  onSubmit,
-  onCancel,
-}: {
-  maxAmount: number;
-  onSubmit: (values: { amount: number; paymentDate: string; notes?: string }) => Promise<void> | void;
-  onCancel: () => void;
-}) {
-  const schema = createPaymentSchema(maxAmount);
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<z.infer<typeof schema>>({
+export function DebtPaymentForm({ open, onClose, debt }: Props) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      amount: 0,
-      paymentDate: new Date().toISOString().slice(0, 10),
-      notes: "",
+      amount: debt?.installmentAmount ?? 0,
+      paidAt: todayIso(),
+      installmentNumber: (debt?.paidInstallments ?? 0) + 1,
+      note: "",
     },
+    values: debt
+      ? {
+          amount: debt.installmentAmount ?? 0,
+          paidAt: todayIso(),
+          installmentNumber: (debt.paidInstallments ?? 0) + 1,
+          note: "",
+        }
+      : undefined,
+  });
+
+  const onSubmit = form.handleSubmit(async (values) => {
+    if (!user || !debt) return;
+    try {
+      await createItem<Omit<DebtPayment, "id">>(user.uid, COL.debtPayments, {
+        debtId: debt.id,
+        amount: values.amount,
+        paidAt: values.paidAt,
+        installmentNumber: values.installmentNumber,
+        note: values.note,
+      });
+      await updateItem<Debt>(user.uid, COL.debts, debt.id, {
+        paidInstallments: Math.min(debt.installments ?? Infinity, (debt.paidInstallments ?? 0) + 1),
+      });
+      toast({ tone: "success", title: "Pagamento registrado" });
+      onClose();
+      form.reset();
+    } catch {
+      toast({ tone: "error", title: "Erro ao registrar pagamento" });
+    }
   });
 
   return (
-    <form className="grid gap-3 md:grid-cols-2" onSubmit={handleSubmit(async (values) => onSubmit(values))}>
-      <FormField label="Valor pago" error={errors.amount?.message}>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("amount")}
-        />
-      </FormField>
-
-      <FormField label="Data do pagamento" error={errors.paymentDate?.message}>
-        <input
-          type="date"
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("paymentDate")}
-        />
-      </FormField>
-
-      <div className="md:col-span-2">
-        <FormField label="Observações" error={errors.notes?.message}>
-          <textarea
-            rows={3}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-            placeholder="Anote algo útil sobre esse pagamento"
-            {...register("notes")}
-          />
-        </FormField>
-      </div>
-
-      <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-        <Button variant="secondary" onClick={onCancel}>
-          Cancelar
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Registrando..." : "Registrar pagamento"}
-        </Button>
-      </div>
-    </form>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Registrar pagamento"
+      description={debt ? `${debt.name} — parcela ${(debt.paidInstallments ?? 0) + 1}/${debt.installments ?? "?"}` : undefined}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={onSubmit} loading={form.formState.isSubmitting}>
+            Registrar pagamento
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="space-y-4">
+        <FieldRow>
+          <Field label="Valor pago" required>
+            <Controller
+              name="amount"
+              control={form.control}
+              render={({ field }) => <MoneyInput value={field.value} onChange={field.onChange} />}
+            />
+          </Field>
+          <Field label="Data" required>
+            <Input type="date" {...form.register("paidAt")} />
+          </Field>
+        </FieldRow>
+        <Field label="Nº da parcela">
+          <Input type="number" min={1} {...form.register("installmentNumber")} />
+        </Field>
+        <Field label="Observação">
+          <Textarea placeholder="Opcional" {...form.register("note")} />
+        </Field>
+      </form>
+    </Modal>
   );
 }
-

@@ -1,22 +1,27 @@
-import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
-export function EmptyState({
-  title,
-  description,
-  action,
-}: {
+interface Props {
+  icon?: React.ReactNode;
   title: string;
-  description: string;
+  description?: string;
   action?: React.ReactNode;
-}) {
-  return (
-    <Card className="border-dashed">
-      <div className="space-y-3 text-center">
-        <h3 className="font-display text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-        <p className="mx-auto max-w-xl text-sm text-slate-600 dark:text-slate-400">{description}</p>
-        {action}
-      </div>
-    </Card>
-  );
+  className?: string;
 }
 
+export function EmptyState({ icon, title, description, action, className }: Props) {
+  return (
+    <div
+      className={cn(
+        "flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-hairline bg-surface px-6 py-14 text-center",
+        className,
+      )}
+    >
+      {icon && <div className="text-fg-subtle">{icon}</div>}
+      <div className="max-w-sm space-y-1">
+        <h3 className="text-sm font-semibold text-fg">{title}</h3>
+        {description && <p className="text-xs text-fg-muted">{description}</p>}
+      </div>
+      {action && <div className="mt-1">{action}</div>}
+    </div>
+  );
+}

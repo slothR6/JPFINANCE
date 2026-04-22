@@ -1,147 +1,254 @@
 "use client";
 
-import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { RESPONSIBLE_OPTIONS } from "@/lib/constants";
-import type { Expense } from "@/types";
+import { z } from "zod";
+import { useMemo } from "react";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useData } from "@/components/providers/data-provider";
+import { useToast } from "@/components/providers/toast-provider";
+import { COL, createItem, deleteItem, updateItem } from "@/services/repository";
+import type { Expense, ExpenseKind } from "@/types";
+import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-field";
+import { Field, FieldRow } from "@/components/ui/field";
+import { Input, Select, Textarea } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
+import { getCreditCardDueDate, todayIso, formatDateBr } from "@/lib/dates";
+import { PAYMENT_METHODS } from "@/lib/constants";
+import { Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const expenseSchema = z.object({
-  description: z.string().min(2, "Informe uma descrição."),
-  amount: z.coerce.number().positive("Informe um valor maior que zero."),
-  category: z.string().min(2, "Escolha uma categoria."),
-  dueDate: z.string().min(1, "Informe o vencimento."),
-  status: z.enum(["pendente", "pago"]),
-  responsible: z.enum(["eu", "esposa", "ambos", "nao-definido"]).optional(),
-  notes: z.string().optional(),
-  isRecurring: z.boolean(),
+const schema = z.object({
+  description: z.string().min(1, "Informe uma descrição"),
+  amount: z.number().positive("Valor deve ser maior que zero"),
+  categoryId: z.string().min(1, "Selecione uma categoria"),
+  paidAt: z.string().min(1, "Data obrigatória"),
+  expenseKind: z.enum(["despesa", "gasto"]).optional(),
+  method: z.enum(["pix", "cartao", "dinheiro", "boleto", "transferencia", "outros"]).optional(),
+  creditCardId: z.string().optional(),
+  note: z.string().optional(),
 });
 
-type ExpenseFormValues = z.infer<typeof expenseSchema>;
+type FormValues = z.infer<typeof schema>;
 
-export function ExpenseForm({
-  categories,
-  initialValues,
-  onSubmit,
-  onCancel,
-}: {
-  categories: string[];
-  initialValues?: Partial<Expense>;
-  onSubmit: (values: ExpenseFormValues) => Promise<void> | void;
-  onCancel: () => void;
-}) {
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<ExpenseFormValues>({
-    resolver: zodResolver(expenseSchema),
-    defaultValues: {
-      description: initialValues?.description || "",
-      amount: initialValues?.amount || 0,
-      category: initialValues?.category || categories[0] || "",
-      dueDate: initialValues?.dueDate || new Date().toISOString().slice(0, 10),
-      status: initialValues?.status || "pendente",
-      responsible: initialValues?.responsible || "nao-definido",
-      notes: initialValues?.notes || "",
-      isRecurring: initialValues?.isRecurring || false,
-    },
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  editing?: Expense | null;
+}
+
+export function ExpenseForm({ open, onClose, editing }: Props) {
+  const { user } = useAuth();
+  const { categories, creditCards } = useData();
+  const { toast } = useToast();
+
+  const expenseCategories = useMemo(
+    () => categories.filter((c) => c.kind === "expense" && !c.archived),
+    [categories],
+  );
+  const activeCards = useMemo(
+    () => creditCards.filter((c) => !c.archived),
+    [creditCards],
+  );
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    values: editing
+      ? {
+          description: editing.description,
+          amount: editing.amount,
+          categoryId: editing.categoryId,
+          paidAt: editing.paidAt,
+          expenseKind: editing.expenseKind,
+          method: editing.method,
+          creditCardId: editing.creditCardId ?? "",
+          note: editing.note ?? "",
+        }
+      : {
+          description: "",
+          amount: 0,
+          categoryId: expenseCategories[0]?.id ?? "",
+          paidAt: todayIso(),
+          expenseKind: "despesa",
+          method: "pix",
+          creditCardId: "",
+          note: "",
+        },
   });
 
+  const expenseKind = form.watch("expenseKind");
+  const method = form.watch("method");
+  const creditCardId = form.watch("creditCardId");
+  const paidAt = form.watch("paidAt");
+
+  const selectedCard = useMemo(
+    () => activeCards.find((c) => c.id === creditCardId),
+    [activeCards, creditCardId],
+  );
+
+  const creditCardDueAt = useMemo(() => {
+    if (!selectedCard || !paidAt) return null;
+    return getCreditCardDueDate(paidAt, selectedCard.closingDay, selectedCard.dueDay);
+  }, [selectedCard, paidAt]);
+
+  const onSubmit = form.handleSubmit(async (values) => {
+    if (!user) return;
+    try {
+      const payload: Omit<Expense, "id"> = {
+        description: values.description,
+        amount: values.amount,
+        categoryId: values.categoryId,
+        paidAt: values.paidAt,
+        expenseKind: values.expenseKind,
+        method: values.method,
+        creditCardId: values.creditCardId || undefined,
+        creditCardDueAt: creditCardDueAt ?? undefined,
+        note: values.note || undefined,
+      };
+      if (editing) {
+        await updateItem<Expense>(user.uid, COL.expenses, editing.id, payload);
+        toast({ tone: "success", title: "Despesa atualizada" });
+      } else {
+        await createItem<Omit<Expense, "id">>(user.uid, COL.expenses, payload);
+        toast({ tone: "success", title: "Despesa registrada" });
+      }
+      onClose();
+      form.reset();
+    } catch (err) {
+      console.error("Erro ao salvar despesa:", err);
+      toast({ tone: "error", title: "Erro ao salvar" });
+    }
+  });
+
+  const onDelete = async () => {
+    if (!user || !editing) return;
+    try {
+      await deleteItem(user.uid, COL.expenses, editing.id);
+      toast({ tone: "success", title: "Despesa excluída" });
+      onClose();
+    } catch {
+      toast({ tone: "error", title: "Erro ao excluir" });
+    }
+  };
+
   return (
-    <form className="grid gap-3 md:grid-cols-2" onSubmit={handleSubmit(async (values) => onSubmit(values))}>
-      <div className="md:col-span-2">
-        <FormField label="Descrição" error={errors.description?.message}>
-          <input
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-            placeholder="Ex.: aluguel, mercado, internet"
-            {...register("description")}
-          />
-        </FormField>
-      </div>
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={editing ? "Editar despesa" : "Nova despesa"}
+      description={editing ? undefined : "Registre o que saiu da sua conta."}
+      footer={
+        <>
+          {editing && (
+            <Button type="button" variant="ghost" iconLeft={<Trash2 size={14} />} onClick={onDelete}>
+              Excluir
+            </Button>
+          )}
+          <div className="flex-1" />
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={onSubmit} loading={form.formState.isSubmitting}>
+            {editing ? "Salvar alterações" : "Registrar despesa"}
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="space-y-5">
+        {/* Tipo: despesa ou gasto */}
+        <Field label="Tipo">
+          <div className="flex gap-2">
+            {(["despesa", "gasto"] as ExpenseKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => form.setValue("expenseKind", k)}
+                className={cn(
+                  "flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition",
+                  expenseKind === k
+                    ? "border-fg bg-fg text-bg"
+                    : "border-hairline bg-surface-2/40 text-fg-muted hover:border-border hover:text-fg",
+                )}
+              >
+                {k === "despesa" ? "Despesa" : "Gasto do dia"}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-2xs text-fg-subtle">
+            {expenseKind === "gasto"
+              ? "Gastos avulsos do cotidiano (almoço, café, lazer)"
+              : "Despesas regulares (mercado, contas, parcelas)"}
+          </p>
+        </Field>
 
-      <FormField label="Valor" error={errors.amount?.message}>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("amount")}
-        />
-      </FormField>
+        <Field label="Descrição" required error={form.formState.errors.description?.message}>
+          <Input autoFocus placeholder={expenseKind === "gasto" ? "Ex: Almoço no restaurante" : "Ex: Mercado do mês"} {...form.register("description")} />
+        </Field>
 
-      <FormField label="Categoria" error={errors.category?.message}>
-        <select
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("category")}
-        >
-          {categories.map((category) => (
-            <option key={category} value={category}>
-              {category}
-            </option>
-          ))}
-        </select>
-      </FormField>
+        <FieldRow>
+          <Field label="Valor" required error={form.formState.errors.amount?.message}>
+            <Controller
+              name="amount"
+              control={form.control}
+              render={({ field }) => <MoneyInput value={field.value} onChange={field.onChange} />}
+            />
+          </Field>
+          <Field label="Data" required error={form.formState.errors.paidAt?.message}>
+            <Input type="date" {...form.register("paidAt")} />
+          </Field>
+        </FieldRow>
 
-      <FormField label="Vencimento" error={errors.dueDate?.message}>
-        <input
-          type="date"
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("dueDate")}
-        />
-      </FormField>
+        <FieldRow>
+          <Field label="Categoria" required error={form.formState.errors.categoryId?.message}>
+            <Select {...form.register("categoryId")}>
+              {expenseCategories.length === 0 && <option value="">Crie uma categoria primeiro</option>}
+              {expenseCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Forma de pagamento">
+            <Select {...form.register("method")}
+              onChange={(e) => {
+                form.setValue("method", e.target.value as FormValues["method"]);
+                if (e.target.value !== "cartao") form.setValue("creditCardId", "");
+              }}
+            >
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </FieldRow>
 
-      <FormField label="Status" error={errors.status?.message} hint="Atrasado é calculado automaticamente">
-        <select
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("status")}
-        >
-          <option value="pendente">Pendente</option>
-          <option value="pago">Pago</option>
-        </select>
-      </FormField>
+        {/* Cartão de crédito */}
+        {method === "cartao" && activeCards.length > 0 && (
+          <Field label="Cartão de crédito" hint="Opcional">
+            <Select {...form.register("creditCardId")}>
+              <option value="">Nenhum (débito/genérico)</option>
+              {activeCards.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}{c.lastDigits ? ` •••• ${c.lastDigits}` : ""}
+                </option>
+              ))}
+            </Select>
+            {creditCardDueAt && (
+              <p className="mt-1.5 text-2xs text-info">
+                Fatura prevista para: <strong>{formatDateBr(creditCardDueAt)}</strong>
+              </p>
+            )}
+          </Field>
+        )}
 
-      <FormField label="Responsável" error={errors.responsible?.message}>
-        <select
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm capitalize focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("responsible")}
-        >
-          {RESPONSIBLE_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option === "nao-definido" ? "Não definido" : option}
-            </option>
-          ))}
-        </select>
-      </FormField>
-
-      <div className="md:col-span-2">
-        <FormField label="Observações" error={errors.notes?.message}>
-          <textarea
-            rows={3}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-            placeholder="Detalhes úteis sobre essa despesa"
-            {...register("notes")}
-          />
-        </FormField>
-      </div>
-
-      <div className="md:col-span-2">
-        <label className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:bg-slate-800/70 dark:text-slate-200">
-          <input type="checkbox" className="rounded border-slate-300 text-teal-600" {...register("isRecurring")} />
-          Despesa recorrente
-        </label>
-      </div>
-
-      <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-        <Button variant="secondary" onClick={onCancel}>
-          Cancelar
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Salvando..." : "Salvar despesa"}
-        </Button>
-      </div>
-    </form>
+        <Field label="Observações (opcional)">
+          <Textarea placeholder="Anotações..." {...form.register("note")} />
+        </Field>
+      </form>
+    </Drawer>
   );
 }

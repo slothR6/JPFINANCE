@@ -1,80 +1,114 @@
 import {
-  addDays,
+  addMonths,
   endOfMonth,
   format,
   isAfter,
   isBefore,
-  isSameDay,
-  isWithinInterval,
+  isSameMonth,
   parseISO,
   startOfMonth,
+  subMonths,
 } from "date-fns";
+import { ptBR } from "date-fns/locale/pt-BR";
 
-export function nowIso() {
-  return new Date().toISOString();
+export type MonthRef = { year: number; month: number }; // month: 0-11
+
+export function currentMonth(): MonthRef {
+  const d = new Date();
+  return { year: d.getFullYear(), month: d.getMonth() };
 }
 
-export function getMonthKey(date: string | Date) {
-  return format(typeof date === "string" ? parseISO(`${date}T00:00:00`) : date, "yyyy-MM");
+export function monthToDate(m: MonthRef): Date {
+  return new Date(m.year, m.month, 1);
 }
 
-export function getMonthDate(monthKey: string) {
-  return parseISO(`${monthKey}-01T00:00:00`);
+export function nextMonth(m: MonthRef): MonthRef {
+  const d = addMonths(monthToDate(m), 1);
+  return { year: d.getFullYear(), month: d.getMonth() };
 }
 
-export function getCurrentMonthKey() {
-  return getMonthKey(new Date());
+export function prevMonth(m: MonthRef): MonthRef {
+  const d = subMonths(monthToDate(m), 1);
+  return { year: d.getFullYear(), month: d.getMonth() };
 }
 
-export function buildDateInMonth(monthKey: string, sourceDate: string) {
-  const base = getMonthDate(monthKey);
-  const source = parseISO(`${sourceDate}T00:00:00`);
-  const day = Math.min(source.getDate(), endOfMonth(base).getDate());
-
-  return format(new Date(base.getFullYear(), base.getMonth(), day), "yyyy-MM-dd");
+export function monthRange(m: MonthRef) {
+  const d = monthToDate(m);
+  return { start: startOfMonth(d), end: endOfMonth(d) };
 }
 
-export function monthInterval(monthKey: string) {
-  const currentMonth = getMonthDate(monthKey);
-
-  return {
-    start: startOfMonth(currentMonth),
-    end: endOfMonth(currentMonth),
-  };
+export function formatMonthLong(m: MonthRef) {
+  return format(monthToDate(m), "MMMM 'de' yyyy", { locale: ptBR });
 }
 
-export function isDateInMonth(date: string, monthKey: string) {
-  const normalizedDate = parseISO(`${date}T00:00:00`);
-  const interval = monthInterval(monthKey);
-
-  return isWithinInterval(normalizedDate, interval);
+export function formatMonthShort(m: MonthRef) {
+  return format(monthToDate(m), "MMM/yy", { locale: ptBR });
 }
 
-export function isTodayDate(date: string) {
-  return isSameDay(parseISO(`${date}T00:00:00`), new Date());
+export function formatDateBr(iso?: string) {
+  if (!iso) return "—";
+  try {
+    return format(parseISO(iso), "dd/MM/yyyy", { locale: ptBR });
+  } catch {
+    return iso;
+  }
 }
 
-export function isDateWithinNextDays(date: string, days: number) {
-  const value = parseISO(`${date}T00:00:00`);
-  const start = new Date();
-  const end = addDays(start, days);
-
-  return isWithinInterval(value, {
-    start: new Date(start.getFullYear(), start.getMonth(), start.getDate()),
-    end: new Date(end.getFullYear(), end.getMonth(), end.getDate()),
-  });
+export function formatDateReadable(iso?: string) {
+  if (!iso) return "—";
+  try {
+    return format(parseISO(iso), "dd 'de' MMM", { locale: ptBR });
+  } catch {
+    return iso;
+  }
 }
 
-export function isPastDate(date: string) {
-  const value = parseISO(`${date}T00:00:00`);
-  const today = new Date();
-
-  return isBefore(value, new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+export function todayIso(): string {
+  return format(new Date(), "yyyy-MM-dd");
 }
 
-export function isFutureDate(date: string) {
-  const value = parseISO(`${date}T00:00:00`);
-  const today = new Date();
-
-  return isAfter(value, new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+export function toIso(date: Date): string {
+  return format(date, "yyyy-MM-dd");
 }
+
+export function isInMonth(iso: string, m: MonthRef): boolean {
+  try {
+    return isSameMonth(parseISO(iso), monthToDate(m));
+  } catch {
+    return false;
+  }
+}
+
+export function daysUntil(iso: string): number {
+  const target = parseISO(iso);
+  const now = new Date();
+  const diff = Math.floor(
+    (target.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) /
+      (1000 * 60 * 60 * 24),
+  );
+  return diff;
+}
+
+export function isOverdue(iso: string): boolean {
+  return isBefore(parseISO(iso), new Date()) && !isSameDay(parseISO(iso), new Date());
+}
+
+function isSameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+export function getCreditCardDueDate(
+  purchaseDateIso: string,
+  closingDay: number,
+  dueDay: number,
+): string {
+  const date = parseISO(purchaseDateIso);
+  const purchaseDay = date.getDate();
+  // If purchased before/on closing day → billed this month's statement → due next month
+  // If purchased after closing day → billed next month's statement → due in 2 months
+  const monthsAhead = purchaseDay <= closingDay ? 1 : 2;
+  const dueDate = addMonths(new Date(date.getFullYear(), date.getMonth(), dueDay), monthsAhead);
+  return format(dueDate, "yyyy-MM-dd");
+}
+
+export { isAfter, isBefore, parseISO, startOfMonth, endOfMonth, format };

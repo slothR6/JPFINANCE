@@ -1,127 +1,232 @@
 "use client";
 
-import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { Debt } from "@/types";
+import { z } from "zod";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useToast } from "@/components/providers/toast-provider";
+import { COL, createItem, deleteItem, updateItem } from "@/services/repository";
+import type { Debt, DebtKind } from "@/types";
+import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-field";
+import { Field, FieldRow } from "@/components/ui/field";
+import { Input, Textarea } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
+import { todayIso } from "@/lib/dates";
+import { Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const debtSchema = z.object({
-  name: z.string().min(2, "Informe o nome da dívida."),
-  creditor: z.string().min(2, "Informe o credor."),
-  originalAmount: z.coerce.number().positive("Informe um valor original válido."),
-  currentAmount: z.coerce.number().nonnegative("Informe o saldo atual."),
-  startDate: z.string().min(1, "Informe a data de início."),
-  notes: z.string().optional(),
-  status: z.enum(["ativa", "negociada", "quitada"]),
-});
-
-type DebtFormValues = z.infer<typeof debtSchema>;
-
-export function DebtForm({
-  initialValues,
-  onSubmit,
-  onCancel,
-}: {
-  initialValues?: Partial<Debt>;
-  onSubmit: (values: DebtFormValues) => Promise<void> | void;
-  onCancel: () => void;
-}) {
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<DebtFormValues>({
-    resolver: zodResolver(debtSchema),
-    defaultValues: {
-      name: initialValues?.name || "",
-      creditor: initialValues?.creditor || "",
-      originalAmount: initialValues?.originalAmount || 0,
-      currentAmount: initialValues?.currentAmount || 0,
-      startDate: initialValues?.startDate || new Date().toISOString().slice(0, 10),
-      notes: initialValues?.notes || "",
-      status: initialValues?.status || "ativa",
-    },
+const schema = z
+  .object({
+    name: z.string().min(1, "Informe um nome"),
+    creditor: z.string().optional(),
+    debtKind: z.enum(["negociada", "mapeada"]),
+    totalAmount: z.number().positive("Valor deve ser maior que zero"),
+    installments: z.coerce.number().int().min(1).optional(),
+    paidInstallments: z.coerce.number().int().min(0).optional(),
+    installmentAmount: z.number().positive().optional(),
+    firstDueAt: z.string().optional(),
+    interestRate: z.coerce.number().optional(),
+    note: z.string().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.debtKind === "negociada") {
+      if (!val.installments || val.installments < 1) {
+        ctx.addIssue({ code: "custom", path: ["installments"], message: "Informe o número de parcelas" });
+      }
+      if (!val.installmentAmount || val.installmentAmount <= 0) {
+        ctx.addIssue({ code: "custom", path: ["installmentAmount"], message: "Informe o valor da parcela" });
+      }
+      if (!val.firstDueAt) {
+        ctx.addIssue({ code: "custom", path: ["firstDueAt"], message: "Informe a data do primeiro vencimento" });
+      }
+    }
   });
 
-  return (
-    <form className="grid gap-3 md:grid-cols-2" onSubmit={handleSubmit(async (values) => onSubmit(values))}>
-      <FormField label="Nome da dívida" error={errors.name?.message}>
-        <input
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          placeholder="Ex.: cartão renegociado"
-          {...register("name")}
-        />
-      </FormField>
+type FormValues = z.infer<typeof schema>;
 
-      <FormField label="Credor" error={errors.creditor?.message}>
-        <input
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          placeholder="Ex.: banco, financeira, pessoa"
-          {...register("creditor")}
-        />
-      </FormField>
-
-      <FormField label="Valor original" error={errors.originalAmount?.message}>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("originalAmount")}
-        />
-      </FormField>
-
-      <FormField label="Valor atual" error={errors.currentAmount?.message}>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("currentAmount")}
-        />
-      </FormField>
-
-      <FormField label="Data de início" error={errors.startDate?.message}>
-        <input
-          type="date"
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("startDate")}
-        />
-      </FormField>
-
-      <FormField label="Status" error={errors.status?.message}>
-        <select
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("status")}
-        >
-          <option value="ativa">Ativa</option>
-          <option value="negociada">Negociada</option>
-          <option value="quitada">Quitada</option>
-        </select>
-      </FormField>
-
-      <div className="md:col-span-2">
-        <FormField label="Observações" error={errors.notes?.message}>
-          <textarea
-            rows={3}
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-            placeholder="Informações importantes da negociação"
-            {...register("notes")}
-          />
-        </FormField>
-      </div>
-
-      <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-        <Button variant="secondary" onClick={onCancel}>
-          Cancelar
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Salvando..." : "Salvar dívida"}
-        </Button>
-      </div>
-    </form>
-  );
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  editing?: Debt | null;
 }
 
+export function DebtForm({ open, onClose, editing }: Props) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    values: editing
+      ? {
+          name: editing.name,
+          creditor: editing.creditor ?? "",
+          debtKind: editing.debtKind ?? "negociada",
+          totalAmount: editing.totalAmount,
+          installments: editing.installments,
+          paidInstallments: editing.paidInstallments,
+          installmentAmount: editing.installmentAmount,
+          firstDueAt: editing.firstDueAt,
+          interestRate: editing.interestRate,
+          note: editing.note ?? "",
+        }
+      : {
+          name: "",
+          creditor: "",
+          debtKind: "negociada",
+          totalAmount: 0,
+          installments: 1,
+          paidInstallments: 0,
+          installmentAmount: 0,
+          firstDueAt: todayIso(),
+          interestRate: undefined,
+          note: "",
+        },
+  });
+
+  const debtKind = form.watch("debtKind");
+
+  const onSubmit = form.handleSubmit(async (values) => {
+    if (!user) return;
+    try {
+      const payload: Omit<Debt, "id"> = {
+        name: values.name,
+        creditor: values.creditor || undefined,
+        debtKind: values.debtKind,
+        totalAmount: values.totalAmount,
+        installments: values.debtKind === "negociada" ? values.installments : undefined,
+        paidInstallments: values.debtKind === "negociada" ? (values.paidInstallments ?? 0) : undefined,
+        installmentAmount: values.debtKind === "negociada" ? values.installmentAmount : undefined,
+        firstDueAt: values.debtKind === "negociada" ? values.firstDueAt : undefined,
+        interestRate: values.interestRate || undefined,
+        note: values.note || undefined,
+      };
+      if (editing) {
+        await updateItem<Debt>(user.uid, COL.debts, editing.id, payload);
+        toast({ tone: "success", title: "Dívida atualizada" });
+      } else {
+        await createItem<Omit<Debt, "id">>(user.uid, COL.debts, payload);
+        toast({ tone: "success", title: "Dívida registrada" });
+      }
+      onClose();
+      form.reset();
+    } catch (err) {
+      console.error("Erro ao salvar dívida:", err);
+      toast({ tone: "error", title: "Erro ao salvar" });
+    }
+  });
+
+  const onDelete = async () => {
+    if (!user || !editing) return;
+    try {
+      await deleteItem(user.uid, COL.debts, editing.id);
+      toast({ tone: "success", title: "Dívida removida" });
+      onClose();
+    } catch {
+      toast({ tone: "error", title: "Erro ao excluir" });
+    }
+  };
+
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={editing ? "Editar dívida" : "Nova dívida"}
+      description={editing ? undefined : "Registre uma dívida negociada ou apenas mapeie uma que existe."}
+      size="lg"
+      footer={
+        <>
+          {editing && (
+            <Button type="button" variant="ghost" iconLeft={<Trash2 size={14} />} onClick={onDelete}>
+              Excluir
+            </Button>
+          )}
+          <div className="flex-1" />
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={onSubmit} loading={form.formState.isSubmitting}>
+            {editing ? "Salvar" : "Registrar dívida"}
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="space-y-5">
+        {/* Tipo de dívida */}
+        <Field label="Tipo de dívida">
+          <div className="inline-flex rounded-lg border border-hairline bg-surface-2 p-0.5">
+            {(["negociada", "mapeada"] as DebtKind[]).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => form.setValue("debtKind", k, { shouldValidate: true })}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-medium rounded-md transition",
+                  debtKind === k ? "bg-surface text-fg shadow-xs" : "text-fg-muted hover:text-fg",
+                )}
+              >
+                {k === "negociada" ? "Negociada" : "Mapeada (sem detalhes)"}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-2xs text-fg-subtle">
+            {debtKind === "negociada"
+              ? "Dívida com parcelas definidas, credor e vencimentos conhecidos."
+              : "Dívida que você sabe que existe mas ainda não tem condições definidas."}
+          </p>
+        </Field>
+
+        <FieldRow>
+          <Field label="Nome" required error={form.formState.errors.name?.message}>
+            <Input autoFocus placeholder="Ex: Financiamento carro" {...form.register("name")} />
+          </Field>
+          <Field label="Credor">
+            <Input placeholder="Ex: Banco X" {...form.register("creditor")} />
+          </Field>
+        </FieldRow>
+
+        <Field label="Valor total" required error={form.formState.errors.totalAmount?.message}>
+          <Controller
+            name="totalAmount"
+            control={form.control}
+            render={({ field }) => <MoneyInput value={field.value} onChange={field.onChange} />}
+          />
+        </Field>
+
+        {debtKind === "negociada" && (
+          <>
+            <FieldRow>
+              <Field label="Valor da parcela" required error={form.formState.errors.installmentAmount?.message}>
+                <Controller
+                  name="installmentAmount"
+                  control={form.control}
+                  render={({ field }) => <MoneyInput value={field.value ?? 0} onChange={field.onChange} />}
+                />
+              </Field>
+              <Field label="Juros ao mês (%)" hint="Opcional">
+                <Input type="number" step="0.01" placeholder="0,00" {...form.register("interestRate")} />
+              </Field>
+            </FieldRow>
+
+            <FieldRow>
+              <Field label="Parcelas totais" required error={form.formState.errors.installments?.message}>
+                <Input type="number" min={1} {...form.register("installments")} />
+              </Field>
+              <Field label="Parcelas já pagas">
+                <Input type="number" min={0} {...form.register("paidInstallments")} />
+              </Field>
+            </FieldRow>
+
+            <Field label="Primeiro vencimento" required error={form.formState.errors.firstDueAt?.message}>
+              <Input type="date" {...form.register("firstDueAt")} />
+            </Field>
+          </>
+        )}
+
+        <Field label="Observações">
+          <Textarea placeholder="Anotações..." {...form.register("note")} />
+        </Field>
+      </form>
+    </Drawer>
+  );
+}

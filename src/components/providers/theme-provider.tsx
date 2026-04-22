@@ -1,51 +1,63 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-type Theme = "light" | "dark";
+type Theme = "light" | "dark" | "system";
 
 interface ThemeContextValue {
   theme: Theme;
-  toggleTheme: () => void;
-  setTheme: (theme: Theme) => void;
+  resolved: "light" | "dark";
+  setTheme: (t: Theme) => void;
 }
 
-const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
+const ThemeContext = createContext<ThemeContextValue | null>(null);
+const STORAGE_KEY = "jpf-theme";
+
+function resolveSystem(): "light" | "dark" {
+  if (typeof window === "undefined") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("light");
+  const [theme, setThemeState] = useState<Theme>("system");
+  const [resolved, setResolved] = useState<"light" | "dark">("light");
 
   useEffect(() => {
-    const storedTheme = window.localStorage.getItem("finance-theme") as Theme | null;
-    const systemPrefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const initialTheme = storedTheme || (systemPrefersDark ? "dark" : "light");
-
-    document.documentElement.classList.toggle("dark", initialTheme === "dark");
-    setThemeState(initialTheme);
+    const stored = (localStorage.getItem(STORAGE_KEY) as Theme) || "system";
+    setThemeState(stored);
   }, []);
 
-  function setTheme(nextTheme: Theme) {
-    setThemeState(nextTheme);
-    window.localStorage.setItem("finance-theme", nextTheme);
-    document.documentElement.classList.toggle("dark", nextTheme === "dark");
-  }
+  useEffect(() => {
+    const root = document.documentElement;
+    const next = theme === "system" ? resolveSystem() : theme;
+    setResolved(next);
+    root.classList.toggle("dark", next === "dark");
+    root.style.colorScheme = next;
+  }, [theme]);
 
-  function toggleTheme() {
-    setTheme(theme === "dark" ? "light" : "dark");
-  }
+  useEffect(() => {
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => {
+      const next = mq.matches ? "dark" : "light";
+      setResolved(next);
+      document.documentElement.classList.toggle("dark", next === "dark");
+    };
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [theme]);
 
-  return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>{children}</ThemeContext.Provider>
-  );
+  const setTheme = (t: Theme) => {
+    localStorage.setItem(STORAGE_KEY, t);
+    setThemeState(t);
+  };
+
+  const value = useMemo(() => ({ theme, resolved, setTheme }), [theme, resolved]);
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {
-  const context = useContext(ThemeContext);
-
-  if (!context) {
-    throw new Error("useTheme deve ser usado dentro de ThemeProvider.");
-  }
-
-  return context;
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
+  return ctx;
 }
-

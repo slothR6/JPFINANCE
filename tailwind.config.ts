@@ -5,38 +5,70 @@ const config: Config = {
   darkMode: ["class"],
   content: ["./src/**/*.{js,ts,jsx,tsx,mdx}"],
   theme: {
+    container: {
+      center: true,
+      padding: "1.25rem",
+      screens: { "2xl": "1280px" },
+    },
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
-        card: "var(--card)",
-        "card-foreground": "var(--card-foreground)",
-        accent: "var(--accent)",
-        "accent-foreground": "var(--accent-foreground)",
-        muted: "var(--muted)",
-        "muted-foreground": "var(--muted-foreground)",
-        border: "var(--border)",
-        success: "var(--success)",
-        warning: "var(--warning)",
-        danger: "var(--danger)",
-      },
-      boxShadow: {
-        soft: "0 18px 50px -22px rgba(15, 23, 42, 0.25)",
-      },
-      backgroundImage: {
-        "mesh-light":
-          "radial-gradient(circle at top left, rgba(20, 184, 166, 0.18), transparent 35%), radial-gradient(circle at top right, rgba(245, 158, 11, 0.15), transparent 30%), linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.98) 100%)",
-        "mesh-dark":
-          "radial-gradient(circle at top left, rgba(45, 212, 191, 0.16), transparent 35%), radial-gradient(circle at top right, rgba(251, 191, 36, 0.12), transparent 30%), linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(2,6,23,0.98) 100%)",
+        bg: "hsl(var(--bg) / <alpha-value>)",
+        surface: "hsl(var(--surface) / <alpha-value>)",
+        "surface-2": "hsl(var(--surface-2) / <alpha-value>)",
+        border: "hsl(var(--border) / <alpha-value>)",
+        hairline: "hsl(var(--hairline) / <alpha-value>)",
+        fg: "hsl(var(--fg) / <alpha-value>)",
+        "fg-muted": "hsl(var(--fg-muted) / <alpha-value>)",
+        "fg-subtle": "hsl(var(--fg-subtle) / <alpha-value>)",
+        brand: {
+          DEFAULT: "hsl(var(--brand) / <alpha-value>)",
+          fg: "hsl(var(--brand-fg) / <alpha-value>)",
+          soft: "hsl(var(--brand-soft) / <alpha-value>)",
+        },
+        success: "hsl(var(--success) / <alpha-value>)",
+        warning: "hsl(var(--warning) / <alpha-value>)",
+        danger: "hsl(var(--danger) / <alpha-value>)",
+        info: "hsl(var(--info) / <alpha-value>)",
       },
       fontFamily: {
-        display: ["var(--font-manrope)"],
-        body: ["var(--font-ibm-plex-sans)"],
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["var(--font-display)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "monospace"],
+      },
+      fontSize: {
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }],
+      },
+      borderRadius: {
+        xl: "0.875rem",
+        "2xl": "1.125rem",
+      },
+      boxShadow: {
+        xs: "0 1px 2px 0 rgb(15 23 42 / 0.04)",
+        soft: "0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -8px rgb(15 23 42 / 0.08)",
+        pop: "0 12px 40px -12px rgb(15 23 42 / 0.25)",
+      },
+      keyframes: {
+        "fade-in": {
+          "0%": { opacity: "0", transform: "translateY(4px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "slide-in-right": {
+          "0%": { transform: "translateX(100%)" },
+          "100%": { transform: "translateX(0)" },
+        },
+        shimmer: {
+          "0%": { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
+        },
+      },
+      animation: {
+        "fade-in": "fade-in 200ms ease-out",
+        "slide-in-right": "slide-in-right 240ms cubic-bezier(0.22, 1, 0.36, 1)",
+        shimmer: "shimmer 1.8s linear infinite",
       },
     },
   },
-  plugins: [forms],
+  plugins: [forms({ strategy: "class" })],
 };
 
 export default config;
-

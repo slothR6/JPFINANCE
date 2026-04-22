@@ -1,123 +1,163 @@
 "use client";
 
-import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { RESPONSIBLE_OPTIONS } from "@/lib/constants";
+import { z } from "zod";
+import { useMemo } from "react";
+import { useAuth } from "@/components/providers/auth-provider";
+import { useData } from "@/components/providers/data-provider";
+import { useToast } from "@/components/providers/toast-provider";
+import { COL, createItem, deleteItem, updateItem } from "@/services/repository";
 import type { Income } from "@/types";
+import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
-import { FormField } from "@/components/ui/form-field";
+import { Field, FieldRow } from "@/components/ui/field";
+import { Input, Select, Textarea } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
+import { todayIso } from "@/lib/dates";
+import { Trash2 } from "lucide-react";
 
-const incomeSchema = z.object({
-  description: z.string().min(2, "Informe uma descrição."),
-  amount: z.coerce.number().positive("Informe um valor maior que zero."),
-  date: z.string().min(1, "Informe a data."),
-  category: z.string().min(2, "Escolha uma categoria."),
-  responsible: z.enum(["eu", "esposa", "ambos", "nao-definido"]).optional(),
-  isRecurring: z.boolean(),
+const schema = z.object({
+  description: z.string().min(1, "Informe uma descrição"),
+  amount: z.number().positive("Valor deve ser maior que zero"),
+  categoryId: z.string().min(1, "Selecione uma categoria"),
+  receivedAt: z.string().min(1, "Data obrigatória"),
+  recurring: z.boolean().optional(),
+  note: z.string().optional(),
 });
 
-type IncomeFormValues = z.infer<typeof incomeSchema>;
+type FormValues = z.infer<typeof schema>;
 
-export function IncomeForm({
-  categories,
-  initialValues,
-  onSubmit,
-  onCancel,
-}: {
-  categories: string[];
-  initialValues?: Partial<Income>;
-  onSubmit: (values: IncomeFormValues) => Promise<void> | void;
-  onCancel: () => void;
-}) {
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<IncomeFormValues>({
-    resolver: zodResolver(incomeSchema),
-    defaultValues: {
-      description: initialValues?.description || "",
-      amount: initialValues?.amount || 0,
-      date: initialValues?.date || new Date().toISOString().slice(0, 10),
-      category: initialValues?.category || categories[0] || "",
-      responsible: initialValues?.responsible || "nao-definido",
-      isRecurring: initialValues?.isRecurring || false,
-    },
-  });
-
-  return (
-    <form className="grid gap-3 md:grid-cols-2" onSubmit={handleSubmit(async (values) => onSubmit(values))}>
-      <div className="md:col-span-2">
-        <FormField label="Descrição" error={errors.description?.message}>
-          <input
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-            placeholder="Ex.: salário, freelas, reembolso"
-            {...register("description")}
-          />
-        </FormField>
-      </div>
-
-      <FormField label="Valor" error={errors.amount?.message}>
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("amount")}
-        />
-      </FormField>
-
-      <FormField label="Data" error={errors.date?.message}>
-        <input
-          type="date"
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("date")}
-        />
-      </FormField>
-
-      <FormField label="Categoria" error={errors.category?.message}>
-        <select
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("category")}
-        >
-          {categories.map((category) => (
-            <option key={category} value={category}>
-              {category}
-            </option>
-          ))}
-        </select>
-      </FormField>
-
-      <FormField label="Responsável" error={errors.responsible?.message}>
-        <select
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm capitalize focus:border-teal-500 focus:ring-teal-500 dark:border-slate-700"
-          {...register("responsible")}
-        >
-          {RESPONSIBLE_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option === "nao-definido" ? "Não definido" : option}
-            </option>
-          ))}
-        </select>
-      </FormField>
-
-      <div className="md:col-span-2">
-        <label className="flex items-center gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:bg-slate-800/70 dark:text-slate-200">
-          <input type="checkbox" className="rounded border-slate-300 text-teal-600" {...register("isRecurring")} />
-          Receita recorrente
-        </label>
-      </div>
-
-      <div className="md:col-span-2 flex justify-end gap-3 pt-2">
-        <Button variant="secondary" onClick={onCancel}>
-          Cancelar
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Salvando..." : "Salvar receita"}
-        </Button>
-      </div>
-    </form>
-  );
+interface Props {
+  open: boolean;
+  onClose: () => void;
+  editing?: Income | null;
 }
 
+export function IncomeForm({ open, onClose, editing }: Props) {
+  const { user } = useAuth();
+  const { categories } = useData();
+  const { toast } = useToast();
+
+  const incomeCategories = useMemo(
+    () => categories.filter((c) => c.kind === "income" && !c.archived),
+    [categories],
+  );
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    values: editing
+      ? {
+          description: editing.description,
+          amount: editing.amount,
+          categoryId: editing.categoryId,
+          receivedAt: editing.receivedAt,
+          recurring: editing.recurring ?? false,
+          note: editing.note ?? "",
+        }
+      : {
+          description: "",
+          amount: 0,
+          categoryId: incomeCategories[0]?.id ?? "",
+          receivedAt: todayIso(),
+          recurring: false,
+          note: "",
+        },
+    resetOptions: { keepDirtyValues: false },
+  });
+
+  const onSubmit = form.handleSubmit(async (values) => {
+    if (!user) return;
+    try {
+      if (editing) {
+        await updateItem<Income>(user.uid, COL.incomes, editing.id, values);
+        toast({ tone: "success", title: "Receita atualizada" });
+      } else {
+        await createItem<Omit<Income, "id">>(user.uid, COL.incomes, values);
+        toast({ tone: "success", title: "Receita registrada" });
+      }
+      onClose();
+      form.reset();
+    } catch {
+      toast({ tone: "error", title: "Erro ao salvar" });
+    }
+  });
+
+  const onDelete = async () => {
+    if (!user || !editing) return;
+    try {
+      await deleteItem(user.uid, COL.incomes, editing.id);
+      toast({ tone: "success", title: "Receita excluída" });
+      onClose();
+    } catch {
+      toast({ tone: "error", title: "Erro ao excluir" });
+    }
+  };
+
+  return (
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={editing ? "Editar receita" : "Nova receita"}
+      description={editing ? undefined : "Registre o que entrou em sua conta."}
+      footer={
+        <>
+          {editing && (
+            <Button type="button" variant="ghost" iconLeft={<Trash2 size={14} />} onClick={onDelete}>
+              Excluir
+            </Button>
+          )}
+          <div className="flex-1" />
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={onSubmit} loading={form.formState.isSubmitting}>
+            {editing ? "Salvar alterações" : "Registrar receita"}
+          </Button>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="space-y-5">
+        <Field label="Descrição" required error={form.formState.errors.description?.message}>
+          <Input autoFocus placeholder="Ex: Salário de abril" {...form.register("description")} />
+        </Field>
+
+        <FieldRow>
+          <Field label="Valor" required error={form.formState.errors.amount?.message}>
+            <Controller
+              name="amount"
+              control={form.control}
+              render={({ field }) => <MoneyInput value={field.value} onChange={field.onChange} />}
+            />
+          </Field>
+          <Field label="Data do recebimento" required error={form.formState.errors.receivedAt?.message}>
+            <Input type="date" {...form.register("receivedAt")} />
+          </Field>
+        </FieldRow>
+
+        <Field label="Categoria" required error={form.formState.errors.categoryId?.message}>
+          <Select {...form.register("categoryId")}>
+            {incomeCategories.length === 0 && <option value="">Crie uma categoria primeiro</option>}
+            {incomeCategories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        <Field label="Observações (opcional)">
+          <Textarea placeholder="Anotações..." {...form.register("note")} />
+        </Field>
+
+        <label className="flex items-start gap-2.5 rounded-lg border border-hairline bg-surface-2/60 p-3.5">
+          <input type="checkbox" className="mt-0.5 rounded" {...form.register("recurring")} />
+          <span className="text-xs">
+            <span className="block font-medium text-fg">Receita recorrente</span>
+            <span className="text-fg-muted">Marque se esta receita se repete mensalmente.</span>
+          </span>
+        </label>
+      </form>
+    </Drawer>
+  );
+}

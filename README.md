@@ -1,141 +1,106 @@
-# JPFINANCE — Controle Financeiro Doméstico
+# JPFINANCE — Controle financeiro pessoal
 
-Aplicação web de controle financeiro para um lar compartilhado por duas pessoas. Centraliza receitas, despesas, contas a pagar, dívidas e relatórios em um único painel, com dados comuns a ambos os usuários.
+Aplicação web de controle financeiro **individual por usuário**. Cada pessoa
+autentica com sua própria conta e acessa exclusivamente seus dados — receitas,
+despesas, contas a pagar, dívidas, relatórios e configurações. Nada é
+compartilhado entre contas.
 
 ## Stack
 
 - **Next.js 15** (App Router) + **React 18** + **TypeScript**
-- **Tailwind CSS 3** + `@tailwindcss/forms`
-- **Firebase** (Authentication + Firestore)
+- **Tailwind CSS 3** com design tokens em CSS variables
+- **Firebase** (Authentication + Firestore) com regras por UID
 - **React Hook Form** + **Zod** para formulários
-- **Recharts** para gráficos
-- **date-fns** / **lucide-react**
+- **Recharts** para visualizações
+- **date-fns** (pt-BR) e **lucide-react**
 
-## Estrutura de pastas
+## Modelo de dados (individual)
+
+```
+firestore/
+└── users/{uid}/
+    ├── categories/{id}
+    ├── incomes/{id}
+    ├── expenses/{id}
+    ├── bills/{id}
+    ├── debts/{id}
+    ├── debtPayments/{id}
+    └── meta/preferences       (orçamento, meta de economia, perfil)
+```
+
+As regras (`firestore.rules`) só liberam leitura/escrita quando
+`request.auth.uid == userId`. Não existe documento compartilhado.
+
+## Estrutura
 
 ```
 src/
 ├── app/
-│   ├── (protected)/        # Rotas autenticadas (dashboard, receitas, despesas, ...)
-│   ├── login/              # Tela de login
-│   └── layout.tsx          # Layout raiz com providers
+│   ├── (app)/                 # rotas autenticadas (app shell)
+│   │   ├── dashboard/
+│   │   ├── receitas/
+│   │   ├── despesas/
+│   │   ├── contas-a-pagar/
+│   │   ├── dividas/
+│   │   ├── relatorios/
+│   │   └── configuracoes/
+│   ├── login/                 # tela de entrar / criar conta
+│   ├── globals.css            # design tokens + base
+│   ├── layout.tsx             # fontes + providers
+│   └── page.tsx               # redireciona para /dashboard
 ├── components/
-│   ├── auth/               # login-form, auth-guard
-│   ├── providers/          # AuthProvider, ThemeProvider, HouseholdDataProvider
-│   ├── charts/ forms/ layout/ ui/
-├── hooks/                  # use-auth, use-household-data, use-month
-├── lib/
-│   └── firebase/client.ts  # Inicialização do Firebase no browser
-├── services/
-│   ├── auth-service.ts     # signIn / signOut
-│   └── household-service.ts
-└── types/
-middleware.ts               # Proteção de rotas via cookie `finance-auth`
-firestore.rules             # Regras do Firestore
+│   ├── auth/                  # login-screen
+│   ├── charts/                # trend-area, donut, category-bars
+│   ├── forms/                 # drawers/modais de criação/edição
+│   ├── layout/                # sidebar, topbar, mobile-nav, app-shell
+│   ├── providers/             # auth, data, month, theme, toast
+│   └── ui/                    # button, card, input, drawer, modal, etc
+├── lib/                       # firebase, dates, finance, utils, constants
+├── services/                  # repository (Firestore CRUD genérico)
+└── types/                     # tipos do domínio
 ```
 
-## Pré-requisitos
+## Configuração
 
-- Node.js 18.18+ (recomendado 20+)
-- Conta no [Firebase Console](https://console.firebase.google.com/) com um projeto criado
+1. Crie um projeto no [Firebase Console](https://console.firebase.google.com/)
+   e habilite **Authentication** (provedor E-mail/senha) e **Firestore**.
+2. Copie `.env.example` para `.env.local` e preencha com as chaves do projeto.
+3. Publique as regras:
+   ```bash
+   firebase deploy --only firestore:rules
+   ```
+4. Instale e rode:
+   ```bash
+   npm install
+   npm run dev
+   ```
 
-## Instalação
+## Criar novos usuários
 
-```bash
-npm install
-```
+Cada pessoa cria sua própria conta pela tela de login
+(aba **Criar conta**). No primeiro acesso, o sistema gera automaticamente:
 
-## Rodando localmente
+- categorias padrão (receitas e despesas)
+- documento de preferências (moeda BRL + tema do sistema)
 
-```bash
-npm run dev
-```
+Tudo isolado por `users/{uid}`.
 
-Abra `http://localhost:3000`. Você será redirecionado para `/login`.
+## Scripts
 
-Outros scripts:
+- `npm run dev` — servidor de desenvolvimento
+- `npm run build` — build de produção
+- `npm run start` — inicia o build de produção
+- `npm run lint` — lint com regras do Next.js
 
-```bash
-npm run build     # build de produção
-npm run start     # roda a build em modo produção
-npm run lint      # ESLint
-```
+## Direção de design
 
-## Configurando o `.env.local`
+Minimalismo SaaS com hierarquia de informação clara:
 
-Crie um arquivo `.env.local` na raiz (já está no `.gitignore`) copiando o `.env.example`:
+- Paleta neutra + um único brand (emerald)
+- Tipografia: Inter (corpo) + Manrope (display)
+- Cards com borda sutil, shadows discretas, respiros generosos
+- Drawers laterais para criar/editar, modais para confirmações
+- Tema claro/escuro/sistema
 
-```env
-NEXT_PUBLIC_FIREBASE_API_KEY=...
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=seu-projeto.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=seu-projeto
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=seu-projeto.firebasestorage.app
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=000000000000
-NEXT_PUBLIC_FIREBASE_APP_ID=1:000000000000:web:abcdef0123456789
-NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=G-XXXXXXXXXX   # opcional
-NEXT_PUBLIC_DEFAULT_HOUSEHOLD_ID=casa-pedro
-```
-
-Todas as variáveis `NEXT_PUBLIC_FIREBASE_*` (exceto `MEASUREMENT_ID`) são **obrigatórias** — se faltar alguma, a tela mostra *“Firebase não configurado. Variáveis ausentes: …”*.
-
-**Onde pegar os valores:** Firebase Console → ⚙️ *Project settings* → *General* → *Your apps* → web app → *SDK setup and configuration* → copie o objeto `firebaseConfig`.
-
-> ⚠️ **Atenção ao `APP_ID`.** O valor tem exatamente este formato: `1:<messagingSenderId>:web:<hash>`. Se ele estiver duplicado, com múltiplos `:web:` ou prefixos extras, remova qualquer duplicação — senão o Firebase pode recusar a inicialização.
-
-Depois de editar `.env.local`, **reinicie** `npm run dev` (Next.js só lê envs no start).
-
-## Firebase — produtos usados
-
-- **Authentication** (provedor Email/Senha)
-- **Firestore** (dados do lar em `households/{householdId}`)
-
-### 1. Habilitar Email/Senha
-
-Firebase Console → *Authentication* → *Sign-in method* → **Email/Password** → *Enable* → *Save*.
-
-Se esta etapa faltar, o login retorna `auth/operation-not-allowed` ou `auth/configuration-not-found`.
-
-### 2. Criar usuário manualmente
-
-Firebase Console → *Authentication* → aba *Users* → **Add user** → preencha email e senha (≥ 6 caracteres) → *Add user*.
-
-O projeto **não** possui tela de cadastro: os usuários são criados manualmente.
-
-### 3. Regras do Firestore
-
-Publique o arquivo `firestore.rules` (Firebase Console → *Firestore Database* → *Rules*). Ele exige `request.auth != null` para acessar `households/{householdId}`.
-
-## Testando o login
-
-1. `npm run dev`
-2. Acesse `http://localhost:3000/login`
-3. Use um email/senha cadastrado manualmente no Firebase Authentication
-4. Ao logar, um cookie `finance-auth=1` é definido e o `middleware.ts` libera as rotas protegidas (`/dashboard`, `/receitas`, etc.)
-
-## Erros comuns
-
-| Mensagem na tela | Causa provável | Como resolver |
-|---|---|---|
-| `Firebase não configurado. Variáveis ausentes: ...` | Falta variável em `.env.local` | Preencher todas as `NEXT_PUBLIC_FIREBASE_*` e **reiniciar** o dev server |
-| `Email ou senha incorretos.` (`auth/invalid-credential`) | Usuário inexistente ou senha errada | Confirmar no console do Firebase; criar/redefinir senha |
-| `Método Email/Senha não está habilitado...` (`auth/operation-not-allowed`) | Provedor desligado | Habilitar em *Authentication → Sign-in method* |
-| `Chave de API do Firebase inválida.` (`auth/invalid-api-key`) | `API_KEY` errada ou `APP_ID` malformado | Recopiar o `firebaseConfig` do console |
-| `Falha de rede ao contatar o Firebase.` | Sem internet / firewall / VPN | Testar conexão |
-| `Muitas tentativas...` (`auth/too-many-requests`) | Lockout temporário | Aguardar alguns minutos |
-
-## O que já está implementado
-
-- Autenticação Email/Senha (login, logout, persistência local, sincronização de cookie)
-- Proteção de rotas via `middleware.ts` + `AuthGuard`
-- Providers: `ThemeProvider`, `AuthProvider`, `HouseholdDataProvider`
-- Rotas protegidas: dashboard, receitas, despesas, contas a pagar, dívidas, relatórios, configurações
-- Formulários validados com Zod + React Hook Form
-- Gráficos (Recharts): donut por categoria, receita vs. despesa, evolução mensal
-- Regras básicas do Firestore
-
-## O que ainda não está
-
-- Cadastro self-service de usuários (usuários são criados pelo Firebase Console)
-- Recuperação de senha
-- Testes automatizados
-- Deploy configurado (Vercel / Firebase Hosting)
+Este não é um CRUD genérico — é um produto pensado para transmitir
+**clareza, controle e tranquilidade** no dia a dia.

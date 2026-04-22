@@ -2,78 +2,106 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  TrendingUp,
-  TrendingDown,
-  ChartColumn,
-  CreditCard,
-  Gauge,
-  HandCoins,
-  Settings,
-} from "lucide-react";
+import { NAV_ITEMS } from "./navigation";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/providers/auth-provider";
+import { initialsFromName } from "@/lib/utils";
+import { LogOut } from "lucide-react";
 
-const navigation = [
-  { href: "/dashboard", label: "Dashboard", icon: Gauge },
-  { href: "/receitas", label: "Receitas", icon: TrendingUp },
-  { href: "/despesas", label: "Despesas", icon: TrendingDown },
-  { href: "/contas-a-pagar", label: "Contas a pagar", icon: CreditCard },
-  { href: "/dividas", label: "Dívidas", icon: HandCoins },
-  { href: "/relatorios", label: "Relatórios", icon: ChartColumn },
-  { href: "/configuracoes", label: "Configurações", icon: Settings },
-];
-
-export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+export function Sidebar() {
   const pathname = usePathname();
+  const { user, signOut } = useAuth();
+
+  const main = NAV_ITEMS.filter((i) => i.group === "main");
+  const analytics = NAV_ITEMS.filter((i) => i.group === "analytics");
+  const setup = NAV_ITEMS.filter((i) => i.group === "setup");
+
+  const name = user?.displayName || user?.email || "Você";
+  const initials = initialsFromName(user?.displayName || user?.email || "");
 
   return (
-    <aside className="flex h-full flex-col justify-between rounded-[32px] border border-slate-200/80 bg-white/90 p-5 shadow-soft dark:border-slate-800 dark:bg-slate-900/75">
-      <div>
-        <div className="rounded-[28px] bg-slate-950 px-5 py-5 text-white dark:bg-slate-100 dark:text-slate-950">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-teal-300 dark:text-teal-700">
-            Finanças da casa
-          </p>
-          <h2 className="mt-3 font-display text-2xl font-bold">Organização mensal</h2>
-          <p className="mt-2 text-sm text-slate-300 dark:text-slate-700">
-            Tudo compartilhado em um único lar financeiro.
-          </p>
+    <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-hairline bg-surface lg:flex">
+      <div className="flex items-center gap-2.5 border-b border-hairline px-6 py-5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-fg text-bg">
+          <span className="font-display text-sm font-semibold">JP</span>
         </div>
-
-        <nav className="mt-6 space-y-2">
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname.startsWith(item.href);
-
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onNavigate}
-                className={cn(
-                  "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition",
-                  isActive
-                    ? "bg-teal-600 text-white shadow-md dark:bg-teal-500 dark:text-slate-950"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100",
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+        <div className="leading-tight">
+          <div className="font-display text-sm font-semibold text-fg">JPFINANCE</div>
+          <div className="text-2xs text-fg-subtle">seu controle pessoal</div>
+        </div>
       </div>
 
-      <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/20 dark:bg-amber-500/10">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">
-          Dica prática
-        </p>
-        <p className="mt-2 text-sm leading-6 text-amber-900 dark:text-amber-100">
-          Registre parcelas negociadas de dívidas manualmente como despesas mensais quando quiser que elas
-          entrem no saldo do mês.
-        </p>
+      <nav className="flex-1 overflow-y-auto px-3 py-5">
+        <NavGroup label="Navegação" items={main} pathname={pathname} />
+        <NavGroup label="Análise" items={analytics} pathname={pathname} />
+        <NavGroup label="Conta" items={setup} pathname={pathname} />
+      </nav>
+
+      <div className="border-t border-hairline p-3">
+        <div className="group flex items-center gap-3 rounded-lg px-2 py-2">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-xs font-semibold text-brand">
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="truncate text-xs font-medium text-fg">{name}</div>
+            <div className="truncate text-2xs text-fg-subtle">{user?.email}</div>
+          </div>
+          <button
+            onClick={signOut}
+            className="shrink-0 rounded-md p-1.5 text-fg-subtle transition hover:bg-surface-2 hover:text-fg"
+            aria-label="Sair"
+            title="Sair"
+          >
+            <LogOut size={14} />
+          </button>
+        </div>
       </div>
     </aside>
   );
 }
 
+function NavGroup({
+  label,
+  items,
+  pathname,
+}: {
+  label: string;
+  items: typeof NAV_ITEMS;
+  pathname: string;
+}) {
+  return (
+    <div className="mb-4">
+      <p className="mb-1.5 px-3 text-2xs font-semibold uppercase tracking-[0.12em] text-fg-subtle">
+        {label}
+      </p>
+      <ul className="space-y-0.5">
+        {items.map((item) => {
+          const active = pathname.startsWith(item.href);
+          const Icon = item.icon;
+          return (
+            <li key={item.href}>
+              <Link
+                href={item.href}
+                className={cn(
+                  "group flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition",
+                  active
+                    ? "bg-surface-2 text-fg"
+                    : "text-fg-muted hover:bg-surface-2/70 hover:text-fg",
+                )}
+              >
+                <Icon
+                  size={16}
+                  className={cn(
+                    "transition",
+                    active ? "text-brand" : "text-fg-subtle group-hover:text-fg-muted",
+                  )}
+                />
+                {item.label}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}

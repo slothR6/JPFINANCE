@@ -1,35 +1,32 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, Manrope } from "next/font/google";
+import { Inter, Manrope } from "next/font/google";
 import { AppProviders } from "@/components/providers/app-providers";
-import "@/app/globals.css";
+import "./globals.css";
 
-const manrope = Manrope({
+const sans = Inter({
   subsets: ["latin"],
-  variable: "--font-manrope",
+  display: "swap",
+  variable: "--font-sans",
 });
 
-const ibmPlexSans = IBM_Plex_Sans({
+const display = Manrope({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-ibm-plex-sans",
+  display: "swap",
+  variable: "--font-display",
 });
 
 export const metadata: Metadata = {
-  title: "Controle Financeiro Doméstico",
-  description: "Aplicação web de controle financeiro pessoal para um lar compartilhado.",
+  title: "JPFINANCE — seu controle financeiro pessoal",
+  description:
+    "Organize receitas, despesas, contas e dívidas em um espaço pessoal, claro e tranquilo.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
-      <body className={`${manrope.variable} ${ibmPlexSans.variable}`}>
+    <html lang="pt-BR" className={`${sans.variable} ${display.variable}`} suppressHydrationWarning>
+      <body>
         <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );
 }
-
