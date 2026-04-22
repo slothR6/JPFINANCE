@@ -17,6 +17,8 @@ export interface Income {
   categoryId: string;
   receivedAt: string; // ISO date (yyyy-MM-dd)
   recurring?: boolean;
+  recurringBaseId?: string;
+  recurringOccurrence?: boolean;
   note?: string;
   createdAt?: string;
 }
@@ -32,6 +34,9 @@ export interface Expense {
   categoryId: string;
   paidAt: string; // ISO date
   expenseKind?: ExpenseKind;
+  recurring?: boolean;
+  recurringBaseId?: string;
+  recurringOccurrence?: boolean;
   method?: "pix" | "cartao" | "dinheiro" | "boleto" | "transferencia" | "outros";
   creditCardId?: string;
   creditCardDueAt?: string; // ISO date - computed billing due date

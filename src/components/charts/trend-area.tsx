@@ -13,7 +13,8 @@ import { format, subMonths } from "date-fns";
 import { ptBR } from "date-fns/locale/pt-BR";
 import type { Expense, Income } from "@/types";
 import { formatCurrency } from "@/lib/utils";
-import { parseISO } from "@/lib/dates";
+import type { MonthRef } from "@/lib/dates";
+import { expensesForDateMonth, expensesForMonth, incomesForMonth, sum } from "@/lib/finance";
 
 interface Props {
   incomes: Income[];
@@ -25,33 +26,25 @@ interface Props {
 
 export function TrendArea({ incomes, expenses, months = 6, referenceDate, expenseDate }: Props) {
   const now = referenceDate ?? new Date();
-  const buckets: { key: string; label: string; incomes: number; expenses: number }[] = [];
+  const buckets: { key: string; label: string; month: MonthRef; incomes: number; expenses: number }[] = [];
   for (let i = months - 1; i >= 0; i--) {
     const d = subMonths(now, i);
     buckets.push({
       key: `${d.getFullYear()}-${d.getMonth()}`,
       label: format(d, "MMM", { locale: ptBR }),
+      month: { year: d.getFullYear(), month: d.getMonth() },
       incomes: 0,
       expenses: 0,
     });
   }
-  const idx = new Map(buckets.map((b, i) => [b.key, i]));
 
-  for (const i of incomes) {
-    try {
-      const d = parseISO(i.receivedAt);
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      const k = idx.get(key);
-      if (k !== undefined) buckets[k].incomes += i.amount;
-    } catch {}
-  }
-  for (const e of expenses) {
-    try {
-      const d = parseISO(expenseDate?.(e) ?? e.paidAt);
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      const k = idx.get(key);
-      if (k !== undefined) buckets[k].expenses += e.amount;
-    } catch {}
+  for (const bucket of buckets) {
+    const bucketExpenses = expenseDate
+      ? expensesForDateMonth(expenses, bucket.month, expenseDate)
+      : expensesForMonth(expenses, bucket.month);
+
+    bucket.incomes = sum(incomesForMonth(incomes, bucket.month).map((income) => income.amount));
+    bucket.expenses = sum(bucketExpenses.map((expense) => expense.amount));
   }
 
   return (

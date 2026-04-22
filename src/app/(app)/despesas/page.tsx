@@ -45,7 +45,10 @@ export default function DespesasPage() {
   };
 
   const openEdit = (e: Expense) => {
-    setEditing(e);
+    const baseExpense = e.recurringBaseId
+      ? expenses.find((item) => item.id === e.recurringBaseId)
+      : e;
+    setEditing(baseExpense ?? e);
     setOpen(true);
   };
 
@@ -114,6 +117,7 @@ export default function DespesasPage() {
                         <>
                           {c && <Badge tone="neutral">{c.name}</Badge>}
                           <Badge tone="neutral">{methodLabel(e.method)}</Badge>
+                          {e.recurring && <Badge tone="info">Recorrente</Badge>}
                           {e.method === "cartao" && cardDueAt && (
                             <>
                               <Badge tone="info">Fatura {formatInvoiceMonth(cardDueAt)}</Badge>

@@ -40,7 +40,10 @@ export default function ReceitasPage() {
   };
 
   const openEdit = (income: Income) => {
-    setEditing(income);
+    const baseIncome = income.recurringBaseId
+      ? incomes.find((item) => item.id === income.recurringBaseId)
+      : income;
+    setEditing(baseIncome ?? income);
     setOpen(true);
   };
 

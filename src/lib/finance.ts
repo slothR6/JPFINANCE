@@ -1,24 +1,60 @@
 import type { Bill, CreditCard, Debt, Expense, Income } from "@/types";
-import { getCreditCardDueDate, isInMonth, type MonthRef } from "@/lib/dates";
+import { addMonths, endOfMonth } from "date-fns";
+import {
+  format,
+  getCreditCardDueDate,
+  isInMonth,
+  monthToDate,
+  parseISO,
+  type MonthRef,
+} from "@/lib/dates";
 
 export function sum(values: number[]): number {
   return values.reduce((acc, v) => acc + (Number.isFinite(v) ? v : 0), 0);
 }
 
 export function incomesForMonth(items: Income[], m: MonthRef) {
-  return items.filter((i) => isInMonth(i.receivedAt, m));
+  return items.flatMap((income) => {
+    if (!income.recurring) return isInMonth(income.receivedAt, m) ? [income] : [];
+    const occurrence = incomeOccurrenceForMonth(income, m);
+    return occurrence ? [occurrence] : [];
+  });
 }
 
 export function expensesForMonth(items: Expense[], m: MonthRef) {
-  return items.filter((e) => isInMonth(e.paidAt, m));
+  return expensesForDateMonth(items, m, (expense) => expense.paidAt);
 }
 
 export function expensesForCompetenceMonth(items: Expense[], creditCards: CreditCard[], m: MonthRef) {
   const cardMap = new Map(creditCards.map((card) => [card.id, card]));
-  return items.filter((expense) => {
+  return expensesForDateMonth(items, m, (expense) => {
     const card = expense.creditCardId ? cardMap.get(expense.creditCardId) : undefined;
-    return isInMonth(getExpenseCompetenceDate(expense, card), m);
+    return getExpenseCompetenceDate(expense, card);
   });
+}
+
+export function expensesForDateMonth(
+  items: Expense[],
+  m: MonthRef,
+  dateForExpense: (expense: Expense) => string,
+) {
+  return items.flatMap((expense) => {
+    const candidates = expense.recurring
+      ? recurringExpenseCandidatesForDateMonth(expense, m)
+      : [expense];
+
+    return candidates.filter((candidate) => isInMonth(dateForExpense(candidate), m));
+  });
+}
+
+export function recurringExpensesForPayableMonth(
+  items: Expense[],
+  creditCards: CreditCard[],
+  m: MonthRef,
+) {
+  return expensesForCompetenceMonth(items, creditCards, m).filter(
+    (expense) => expense.recurring && (!expense.expenseKind || expense.expenseKind === "despesa"),
+  );
 }
 
 export function billsForMonth(items: Bill[], m: MonthRef) {
@@ -62,4 +98,75 @@ export function getExpenseCreditCardDueAt(expense: Expense, creditCard?: CreditC
 export function getExpenseCompetenceDate(expense: Expense, creditCard?: CreditCard): string {
   if (expense.method !== "cartao") return expense.paidAt;
   return getExpenseCreditCardDueAt(expense, creditCard) ?? expense.paidAt;
+}
+
+function incomeOccurrenceForMonth(income: Income, m: MonthRef): Income | null {
+  const receivedAt = recurringDateForMonth(income.receivedAt, m);
+  if (!receivedAt) return null;
+  if (receivedAt === income.receivedAt) return income;
+
+  return {
+    ...income,
+    id: recurringOccurrenceId(income.id, m),
+    receivedAt,
+    recurringBaseId: income.recurringBaseId ?? income.id,
+    recurringOccurrence: true,
+  };
+}
+
+function expenseOccurrenceForMonth(expense: Expense, m: MonthRef): Expense | null {
+  const paidAt = recurringDateForMonth(expense.paidAt, m);
+  if (!paidAt) return null;
+  if (paidAt === expense.paidAt) return expense;
+
+  return {
+    ...expense,
+    id: recurringOccurrenceId(expense.id, m),
+    paidAt,
+    creditCardDueAt: undefined,
+    recurringBaseId: expense.recurringBaseId ?? expense.id,
+    recurringOccurrence: true,
+  };
+}
+
+function recurringExpenseCandidatesForDateMonth(expense: Expense, m: MonthRef): Expense[] {
+  const monthCandidates = [m, addMonthsToRef(m, -1), addMonthsToRef(m, -2)];
+  const seen = new Set<string>();
+  const expenses: Expense[] = [];
+
+  for (const month of monthCandidates) {
+    const occurrence = expenseOccurrenceForMonth(expense, month);
+    if (!occurrence || seen.has(occurrence.id)) continue;
+    seen.add(occurrence.id);
+    expenses.push(occurrence);
+  }
+
+  return expenses;
+}
+
+function recurringDateForMonth(baseIso: string, m: MonthRef): string | null {
+  try {
+    const baseDate = parseISO(baseIso);
+    const baseMonth = { year: baseDate.getFullYear(), month: baseDate.getMonth() };
+    if (compareMonthRefs(m, baseMonth) < 0) return null;
+
+    const lastDay = endOfMonth(monthToDate(m)).getDate();
+    const day = Math.min(baseDate.getDate(), lastDay);
+    return format(new Date(m.year, m.month, day), "yyyy-MM-dd");
+  } catch {
+    return null;
+  }
+}
+
+function addMonthsToRef(m: MonthRef, amount: number): MonthRef {
+  const date = addMonths(monthToDate(m), amount);
+  return { year: date.getFullYear(), month: date.getMonth() };
+}
+
+function compareMonthRefs(a: MonthRef, b: MonthRef): number {
+  return a.year === b.year ? a.month - b.month : a.year - b.year;
+}
+
+function recurringOccurrenceId(baseId: string, m: MonthRef) {
+  return `${baseId}:recurring:${m.year}-${String(m.month + 1).padStart(2, "0")}`;
 }

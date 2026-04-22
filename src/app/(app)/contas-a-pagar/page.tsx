@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { CalendarClock, Check, Plus } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useData } from "@/components/providers/data-provider";
+import { useMonth } from "@/components/providers/month-provider";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
@@ -11,32 +12,105 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { ListRow } from "@/components/layout/list-row";
 import { BillForm } from "@/components/forms/bill-form";
+import { ExpenseForm } from "@/components/forms/expense-form";
 import { useToast } from "@/components/providers/toast-provider";
 import { COL, updateItem } from "@/services/repository";
-import { daysUntil, formatDateReadable, todayIso } from "@/lib/dates";
+import { daysUntil, formatDateReadable, formatMonthLong, todayIso } from "@/lib/dates";
 import { friendlyDataError, logDevError } from "@/lib/errors";
 import { formatCurrency } from "@/lib/utils";
-import { sum } from "@/lib/finance";
-import type { Bill } from "@/types";
+import { getExpenseCompetenceDate, recurringExpensesForPayableMonth, sum } from "@/lib/finance";
+import type { Bill, Expense } from "@/types";
 
 type Tab = "upcoming" | "paid" | "all";
 
+type PayableItem =
+  | {
+      type: "bill";
+      id: string;
+      description: string;
+      amount: number;
+      dueAt: string;
+      categoryId?: string;
+      bill: Bill;
+    }
+  | {
+      type: "recurringExpense";
+      id: string;
+      description: string;
+      amount: number;
+      dueAt: string;
+      categoryId?: string;
+      expense: Expense;
+    };
+
 export default function ContasPage() {
   const { user } = useAuth();
-  const { bills, categoryById } = useData();
+  const { bills, expenses, creditCards, categoryById } = useData();
+  const { month } = useMonth();
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>("upcoming");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Bill | null>(null);
+  const [expenseOpen, setExpenseOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
-  const sorted = useMemo(() => [...bills].sort((a, b) => a.dueAt.localeCompare(b.dueAt)), [bills]);
+  const billItems = useMemo<PayableItem[]>(
+    () =>
+      [...bills]
+        .sort((a, b) => a.dueAt.localeCompare(b.dueAt))
+        .map((bill) => ({
+          type: "bill" as const,
+          id: `bill-${bill.id}`,
+          description: bill.description,
+          amount: bill.amount,
+          dueAt: bill.dueAt,
+          categoryId: bill.categoryId,
+          bill,
+        })),
+    [bills],
+  );
 
-  const pending = sorted.filter((b) => b.status !== "paid");
-  const paid = sorted.filter((b) => b.status === "paid");
-  const totalPending = sum(pending.map((b) => b.amount));
-  const overdue = pending.filter((b) => daysUntil(b.dueAt) < 0);
+  const recurringExpenseItems = useMemo<PayableItem[]>(() => {
+    const cardMap = new Map(creditCards.map((card) => [card.id, card]));
+    return recurringExpensesForPayableMonth(expenses, creditCards, month)
+      .map((expense) => {
+        const card = expense.creditCardId ? cardMap.get(expense.creditCardId) : undefined;
+        return {
+          type: "recurringExpense" as const,
+          id: `recurring-expense-${expense.id}`,
+          description: expense.description,
+          amount: expense.amount,
+          dueAt: getExpenseCompetenceDate(expense, card),
+          categoryId: expense.categoryId,
+          expense,
+        };
+      })
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+  }, [expenses, creditCards, month]);
 
-  const items = tab === "upcoming" ? pending : tab === "paid" ? paid.reverse() : sorted;
+  const pending = useMemo(
+    () =>
+      [
+        ...billItems.filter((item) => item.type === "bill" && item.bill.status !== "paid"),
+        ...recurringExpenseItems,
+      ].sort(comparePayableItems),
+    [billItems, recurringExpenseItems],
+  );
+  const paid = useMemo(
+    () =>
+      billItems
+        .filter((item) => item.type === "bill" && item.bill.status === "paid")
+        .sort((a, b) => b.dueAt.localeCompare(a.dueAt)),
+    [billItems],
+  );
+  const all = useMemo(
+    () => [...billItems, ...recurringExpenseItems].sort(comparePayableItems),
+    [billItems, recurringExpenseItems],
+  );
+  const totalPending = sum(pending.map((item) => item.amount));
+  const overdue = pending.filter((item) => daysUntil(item.dueAt) < 0);
+
+  const items = tab === "upcoming" ? pending : tab === "paid" ? paid : all;
 
   const markPaid = async (b: Bill) => {
     if (!user) return;
@@ -49,17 +123,25 @@ export default function ContasPage() {
     }
   };
 
+  const openRecurringExpense = (expense: Expense) => {
+    const baseExpense = expense.recurringBaseId
+      ? expenses.find((item) => item.id === expense.recurringBaseId)
+      : expense;
+    setEditingExpense(baseExpense ?? expense);
+    setExpenseOpen(true);
+  };
+
   return (
     <div className="space-y-7">
       <PageHeader
         eyebrow="Contas a pagar"
         title="Seus compromissos"
-        description="Acompanhe vencimentos e evite juros."
+        description={`Contas em aberto e despesas recorrentes de ${formatMonthLong(month)}.`}
         actions={<Button iconLeft={<Plus size={15} />} onClick={() => { setEditing(null); setOpen(true); }}>Nova conta</Button>}
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <SummaryCard label="Em aberto" value={formatCurrency(totalPending)} detail={`${pending.length} contas`} tone="default" />
+        <SummaryCard label="Em aberto" value={formatCurrency(totalPending)} detail={`${pending.length} itens`} tone="default" />
         <SummaryCard
           label="Vencidas"
           value={`${overdue.length}`}
@@ -102,16 +184,16 @@ export default function ContasPage() {
             <EmptyState
               icon={<CalendarClock size={22} />}
               title="Nada aqui"
-              description="Cadastre contas como luz, internet, assinaturas e cartão."
+              description="Cadastre contas ou despesas recorrentes como luz, internet, assinaturas e cartão."
               action={<Button size="sm" onClick={() => { setEditing(null); setOpen(true); }} iconLeft={<Plus size={14} />}>Nova conta</Button>}
               className="m-5"
             />
           ) : (
             <ul className="divide-y divide-hairline">
-              {items.map((b) => {
-                const cat = b.categoryId ? categoryById(b.categoryId) : undefined;
-                const dd = daysUntil(b.dueAt);
-                const isPaid = b.status === "paid";
+              {items.map((item) => {
+                const cat = item.categoryId ? categoryById(item.categoryId) : undefined;
+                const dd = daysUntil(item.dueAt);
+                const isPaid = item.type === "bill" && item.bill.status === "paid";
                 const tone = isPaid ? "success" : dd < 0 ? "danger" : dd <= 3 ? "warning" : "neutral";
                 const label = isPaid
                   ? "Paga"
@@ -121,29 +203,41 @@ export default function ContasPage() {
                       ? "Vence hoje"
                       : `em ${dd}d`;
                 return (
-                  <li key={b.id} className="flex items-stretch">
+                  <li key={item.id} className="flex items-stretch">
                     <div className="flex-1">
                       <ListRow
-                        onClick={() => { setEditing(b); setOpen(true); }}
+                        onClick={() => {
+                          if (item.type === "bill") {
+                            setEditing(item.bill);
+                            setOpen(true);
+                            return;
+                          }
+                          openRecurringExpense(item.expense);
+                        }}
                         dot={cat?.color || "#94a3b8"}
-                        title={b.description}
-                        subtitle={`Vence em ${formatDateReadable(b.dueAt)}`}
+                        title={item.description}
+                        subtitle={
+                          item.type === "bill"
+                            ? `Vence em ${formatDateReadable(item.dueAt)}`
+                            : `Prevista para ${formatDateReadable(item.dueAt)}`
+                        }
                         tags={
                           <>
                             <Badge tone={tone}>{label}</Badge>
+                            {item.type === "recurringExpense" && <Badge tone="info">Recorrente</Badge>}
                             {cat && <Badge tone="neutral">{cat.name}</Badge>}
                           </>
                         }
                         right={
                           <span className="font-display text-sm font-semibold text-fg tabular-nums">
-                            {formatCurrency(b.amount)}
+                            {formatCurrency(item.amount)}
                           </span>
                         }
                       />
                     </div>
-                    {!isPaid && (
+                    {item.type === "bill" && !isPaid && (
                       <button
-                        onClick={() => markPaid(b)}
+                        onClick={() => markPaid(item.bill)}
                         className="flex items-center gap-1 border-l border-hairline px-4 text-xs font-medium text-success transition hover:bg-success/10"
                         title="Marcar como paga"
                       >
@@ -160,8 +254,13 @@ export default function ContasPage() {
       </Card>
 
       <BillForm open={open} onClose={() => setOpen(false)} editing={editing} />
+      <ExpenseForm open={expenseOpen} onClose={() => setExpenseOpen(false)} editing={editingExpense} />
     </div>
   );
+}
+
+function comparePayableItems(a: PayableItem, b: PayableItem) {
+  return a.dueAt.localeCompare(b.dueAt) || a.description.localeCompare(b.description);
 }
 
 function SummaryCard({

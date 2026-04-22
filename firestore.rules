@@ -185,7 +185,7 @@ service cloud.firestore {
     function validExpenseCreate(userId) {
       return request.resource.data.keys().hasOnly([
           'description', 'amount', 'categoryId', 'paidAt', 'expenseKind', 'method',
-          'creditCardId', 'creditCardDueAt', 'note', 'createdAt'
+          'creditCardId', 'creditCardDueAt', 'recurring', 'note', 'createdAt'
         ]) &&
         request.resource.data.keys().hasAll(['description', 'amount', 'categoryId', 'paidAt']) &&
         request.resource.data.description is string &&
@@ -196,6 +196,7 @@ service cloud.firestore {
         ownsCategory(userId, 'categoryId') &&
         optionalIsoDate('paidAt') &&
         (!hasField('expenseKind') || isExpenseKind(request.resource.data.expenseKind)) &&
+        optionalBool('recurring') &&
         (!hasField('method') || isPaymentMethod(request.resource.data.method)) &&
         optionalOwnedCreditCard(userId, 'creditCardId') &&
         optionalIsoDate('creditCardDueAt') &&
@@ -206,7 +207,7 @@ service cloud.firestore {
     function validExpenseUpdate(userId) {
       return request.resource.data.keys().hasOnly([
           'description', 'amount', 'categoryId', 'paidAt', 'expenseKind', 'method',
-          'creditCardId', 'creditCardDueAt', 'note', 'createdAt'
+          'creditCardId', 'creditCardDueAt', 'recurring', 'note', 'createdAt'
         ]) &&
         request.resource.data.keys().hasAll(['description', 'amount', 'categoryId', 'paidAt']) &&
         request.resource.data.description is string &&
@@ -217,6 +218,7 @@ service cloud.firestore {
         ownsCategoryForUpdate(userId, 'categoryId') &&
         optionalIsoDate('paidAt') &&
         (!hasField('expenseKind') || isExpenseKind(request.resource.data.expenseKind)) &&
+        optionalBool('recurring') &&
         (!hasField('method') || isPaymentMethod(request.resource.data.method)) &&
         optionalOwnedCreditCardForUpdate(userId, 'creditCardId') &&
         optionalIsoDate('creditCardDueAt') &&

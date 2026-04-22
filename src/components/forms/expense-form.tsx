@@ -26,6 +26,7 @@ const schema = z.object({
   categoryId: z.string().min(1, "Selecione uma categoria"),
   paidAt: z.string().min(1, "Data obrigatória"),
   expenseKind: z.enum(["despesa", "gasto"]).optional(),
+  recurring: z.boolean().optional(),
   method: z.enum(["pix", "cartao", "dinheiro", "boleto", "transferencia", "outros"]).optional(),
   creditCardId: z.string().optional(),
   note: z.string().optional(),
@@ -62,6 +63,7 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
           categoryId: editing.categoryId,
           paidAt: editing.paidAt,
           expenseKind: editing.expenseKind,
+          recurring: editing.recurring ?? false,
           method: editing.method,
           creditCardId: editing.creditCardId ?? "",
           note: editing.note ?? "",
@@ -72,6 +74,7 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
           categoryId: expenseCategories[0]?.id ?? "",
           paidAt: todayIso(),
           expenseKind: "despesa",
+          recurring: false,
           method: "pix",
           creditCardId: "",
           note: "",
@@ -102,6 +105,7 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
         categoryId: values.categoryId,
         paidAt: values.paidAt,
         expenseKind: values.expenseKind,
+        recurring: values.expenseKind === "despesa" ? values.recurring : false,
         method: values.method,
         creditCardId: values.creditCardId || undefined,
         creditCardDueAt: creditCardDueAt ?? undefined,
@@ -165,7 +169,10 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
               <button
                 key={k}
                 type="button"
-                onClick={() => form.setValue("expenseKind", k)}
+                onClick={() => {
+                  form.setValue("expenseKind", k);
+                  if (k === "gasto") form.setValue("recurring", false);
+                }}
                 className={cn(
                   "flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition",
                   expenseKind === k
@@ -258,6 +265,16 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
         <Field label="Observações (opcional)">
           <Textarea placeholder="Anotações..." {...form.register("note")} />
         </Field>
+
+        {expenseKind === "despesa" && (
+          <label className="flex items-start gap-2.5 rounded-lg border border-hairline bg-surface-2/60 p-3.5">
+            <input type="checkbox" className="mt-0.5 rounded" {...form.register("recurring")} />
+            <span className="text-xs">
+              <span className="block font-medium text-fg">Despesa recorrente</span>
+              <span className="text-fg-muted">Marque se esta despesa se repete mensalmente.</span>
+            </span>
+          </label>
+        )}
       </form>
     </Drawer>
   );

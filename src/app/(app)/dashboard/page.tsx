@@ -32,6 +32,7 @@ import {
   getExpenseCompetenceDate,
   getExpenseCreditCardDueAt,
   incomesForMonth,
+  recurringExpensesForPayableMonth,
   sum,
 } from "@/lib/finance";
 import {
@@ -57,6 +58,22 @@ type CardInvoiceSummary = {
   total: number;
   count: number;
 };
+
+type UpcomingItem =
+  | {
+      type: "bill";
+      key: string;
+      description: string;
+      amount: number;
+      dueAt: string;
+    }
+  | {
+      type: "recurringExpense";
+      key: string;
+      description: string;
+      amount: number;
+      dueAt: string;
+    };
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -109,10 +126,34 @@ export default function DashboardPage() {
   const balance = incomeTotal - expenseTotal;
   const savingsRate = incomeTotal > 0 ? Math.max(0, balance) / incomeTotal : 0;
 
-  const upcoming = bills
-    .filter((b) => b.status !== "paid")
-    .sort((a, b) => a.dueAt.localeCompare(b.dueAt))
-    .slice(0, 6);
+  const upcoming = useMemo<UpcomingItem[]>(() => {
+    const cardMap = new Map(creditCards.map((card) => [card.id, card]));
+    const billItems: UpcomingItem[] = bills
+      .filter((bill) => bill.status !== "paid")
+      .map((bill) => ({
+        type: "bill" as const,
+        key: `bill-${bill.id}`,
+        description: bill.description,
+        amount: bill.amount,
+        dueAt: bill.dueAt,
+      }));
+    const recurringItems: UpcomingItem[] = recurringExpensesForPayableMonth(expenses, creditCards, month).map(
+      (expense) => {
+        const card = expense.creditCardId ? cardMap.get(expense.creditCardId) : undefined;
+        return {
+          type: "recurringExpense" as const,
+          key: `recurring-expense-${expense.id}`,
+          description: expense.description,
+          amount: expense.amount,
+          dueAt: getExpenseCompetenceDate(expense, card),
+        };
+      },
+    );
+
+    return [...billItems, ...recurringItems]
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.description.localeCompare(b.description))
+      .slice(0, 6);
+  }, [bills, expenses, creditCards, month]);
 
   const upcomingCardInvoices = useMemo<CardInvoiceSummary[]>(() => {
     const selectedMonthEnd = toIso(monthRange(month).end);
@@ -282,19 +323,20 @@ export default function DashboardPage() {
                 />
               ) : (
                 <ul className="divide-y divide-hairline -mx-5">
-                  {upcoming.map((b) => {
-                    const dd = daysUntil(b.dueAt);
+                  {upcoming.map((item) => {
+                    const dd = daysUntil(item.dueAt);
                     const tone = dd < 0 ? "danger" : dd <= 3 ? "warning" : "neutral";
                     return (
-                      <li key={b.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                      <li key={item.key} className="flex items-center justify-between gap-3 px-5 py-3">
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-fg">{b.description}</div>
-                          <div className="text-2xs text-fg-subtle">{formatDateReadable(b.dueAt)}</div>
+                          <div className="truncate text-sm font-medium text-fg">{item.description}</div>
+                          <div className="text-2xs text-fg-subtle">{formatDateReadable(item.dueAt)}</div>
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="text-sm font-medium tabular-nums text-fg">
-                            {formatCurrency(b.amount)}
+                            {formatCurrency(item.amount)}
                           </span>
+                          {item.type === "recurringExpense" && <Badge tone="info">Recorrente</Badge>}
                           <Badge tone={tone}>
                             {dd < 0 ? `${Math.abs(dd)}d atraso` : dd === 0 ? "Hoje" : `em ${dd}d`}
                           </Badge>
