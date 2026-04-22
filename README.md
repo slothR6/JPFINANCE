@@ -2,8 +2,7 @@
 
 Aplicação web de controle financeiro **individual por usuário**. Cada pessoa
 autentica com sua própria conta e acessa exclusivamente seus dados — receitas,
-despesas, contas a pagar, dívidas, relatórios e configurações. Nada é
-compartilhado entre contas.
+despesas, contas a pagar, dívidas, relatórios e configurações.
 
 ## Stack
 
@@ -60,21 +59,6 @@ src/
 └── types/                     # tipos do domínio
 ```
 
-## Configuração
-
-1. Crie um projeto no [Firebase Console](https://console.firebase.google.com/)
-   e habilite **Authentication** (provedor E-mail/senha) e **Firestore**.
-2. Copie `.env.example` para `.env.local` e preencha com as chaves do projeto.
-3. Publique as regras:
-   ```bash
-   firebase deploy --only firestore:rules
-   ```
-4. Instale e rode:
-   ```bash
-   npm install
-   npm run dev
-   ```
-
 ## Criar novos usuários
 
 Cada pessoa cria sua própria conta pela tela de login
@@ -85,22 +69,3 @@ Cada pessoa cria sua própria conta pela tela de login
 
 Tudo isolado por `users/{uid}`.
 
-## Scripts
-
-- `npm run dev` — servidor de desenvolvimento
-- `npm run build` — build de produção
-- `npm run start` — inicia o build de produção
-- `npm run lint` — lint com regras do Next.js
-
-## Direção de design
-
-Minimalismo SaaS com hierarquia de informação clara:
-
-- Paleta neutra + um único brand (emerald)
-- Tipografia: Inter (corpo) + Manrope (display)
-- Cards com borda sutil, shadows discretas, respiros generosos
-- Drawers laterais para criar/editar, modais para confirmações
-- Tema claro/escuro/sistema
-
-Este não é um CRUD genérico — é um produto pensado para transmitir
-**clareza, controle e tranquilidade** no dia a dia.
