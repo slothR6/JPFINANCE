@@ -1,4 +1,4 @@
-import type { Bill, CreditCard, Debt, Expense, Income } from "@/types";
+import type { Bill, CreditCard, Debt, Expense, ExpensePaymentStatus, Income } from "@/types";
 import { addMonths, endOfMonth } from "date-fns";
 import {
   format,
@@ -38,13 +38,49 @@ export function expensesForDateMonth(
   m: MonthRef,
   dateForExpense: (expense: Expense) => string,
 ) {
+  const materializedRecurringKeys = new Set(
+    items
+      .filter((expense) => expense.recurringOccurrence && expense.recurringBaseId)
+      .map((expense) => recurringOccurrenceKey(expense.recurringBaseId!, expense.paidAt)),
+  );
+
   return items.flatMap((expense) => {
+    if (expense.recurringOccurrence && expense.recurringBaseId) {
+      return isInMonth(dateForExpense(expense), m) ? [expense] : [];
+    }
+
     const candidates = expense.recurring
       ? recurringExpenseCandidatesForDateMonth(expense, m)
       : [expense];
 
-    return candidates.filter((candidate) => isInMonth(dateForExpense(candidate), m));
+    return candidates.filter((candidate) => {
+      if (candidate.recurringOccurrence) {
+        const baseId = candidate.recurringBaseId ?? expense.id;
+        if (materializedRecurringKeys.has(recurringOccurrenceKey(baseId, candidate.paidAt))) {
+          return false;
+        }
+      }
+      return isInMonth(dateForExpense(candidate), m);
+    });
   });
+}
+
+export function expensesForPayableMonth(
+  items: Expense[],
+  creditCards: CreditCard[],
+  m: MonthRef,
+) {
+  return expensesForCompetenceMonth(items, creditCards, m).filter(
+    (expense) => !expense.expenseKind || expense.expenseKind === "despesa",
+  );
+}
+
+export function pendingExpensesForPayableMonth(
+  items: Expense[],
+  creditCards: CreditCard[],
+  m: MonthRef,
+) {
+  return expensesForPayableMonth(items, creditCards, m).filter((expense) => !isExpensePaid(expense));
 }
 
 export function recurringExpensesForPayableMonth(
@@ -52,9 +88,18 @@ export function recurringExpensesForPayableMonth(
   creditCards: CreditCard[],
   m: MonthRef,
 ) {
-  return expensesForCompetenceMonth(items, creditCards, m).filter(
-    (expense) => expense.recurring && (!expense.expenseKind || expense.expenseKind === "despesa"),
+  return expensesForPayableMonth(items, creditCards, m).filter(
+    (expense) => expense.recurring || expense.recurringOccurrence,
   );
+}
+
+export function expensePaymentStatus(expense: Expense): ExpensePaymentStatus {
+  if (expense.paymentStatus) return expense.paymentStatus;
+  return expense.expenseKind === "gasto" ? "paid" : "pending";
+}
+
+export function isExpensePaid(expense: Expense): boolean {
+  return expensePaymentStatus(expense) === "paid";
 }
 
 export function billsForMonth(items: Bill[], m: MonthRef) {
@@ -123,6 +168,8 @@ function expenseOccurrenceForMonth(expense: Expense, m: MonthRef): Expense | nul
     ...expense,
     id: recurringOccurrenceId(expense.id, m),
     paidAt,
+    paymentStatus: "pending",
+    paidOn: undefined,
     creditCardDueAt: undefined,
     recurringBaseId: expense.recurringBaseId ?? expense.id,
     recurringOccurrence: true,
@@ -169,4 +216,13 @@ function compareMonthRefs(a: MonthRef, b: MonthRef): number {
 
 function recurringOccurrenceId(baseId: string, m: MonthRef) {
   return `${baseId}:recurring:${m.year}-${String(m.month + 1).padStart(2, "0")}`;
+}
+
+function recurringOccurrenceKey(baseId: string, iso: string) {
+  try {
+    const date = parseISO(iso);
+    return `${baseId}:${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  } catch {
+    return `${baseId}:${iso.slice(0, 7)}`;
+  }
 }

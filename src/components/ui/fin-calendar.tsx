@@ -22,6 +22,7 @@ import { getExpenseCreditCardDueAt, sum } from "@/lib/finance";
 import { cn, formatCurrency } from "@/lib/utils";
 import { Badge, Dot } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   year: number;
@@ -33,6 +34,8 @@ interface Props {
   creditCardById?: (id: string) => CreditCard | undefined;
   expenseDate?: (expense: Expense) => string;
   onDayClick?: (date: Date, events: DayEvents) => void;
+  onCreateIncome?: (date: Date) => void;
+  onCreateExpense?: (date: Date) => void;
 }
 
 export interface DayEvents {
@@ -66,6 +69,8 @@ export function FinCalendar({
   creditCardById,
   expenseDate,
   onDayClick,
+  onCreateIncome,
+  onCreateExpense,
 }: Props) {
   const [selectedDay, setSelectedDay] = useState<SelectedDay | null>(null);
   const monthDate = new Date(year, month, 1);
@@ -115,7 +120,7 @@ export function FinCalendar({
 
         {days.map((day) => {
           const k = format(day, "yyyy-MM-dd");
-          const events = eventMap.get(k);
+          const events = eventMap.get(k) ?? { incomes: [], expenses: [], bills: [] };
           const totals = getDayTotals(events);
           const summaries = getDaySummaries(events);
           const visibleSummaries = summaries.slice(0, 2);
@@ -131,14 +136,12 @@ export function FinCalendar({
               key={k}
               type="button"
               onClick={() => {
-                if (!events) return;
                 setSelectedDay({ date: day, events });
                 onDayClick?.(day, events);
               }}
               className={cn(
                 "relative flex min-h-[76px] flex-col items-start bg-surface p-1.5 text-left transition sm:min-h-[96px] sm:p-2",
-                hasEvents && "cursor-pointer hover:bg-surface-2",
-                !hasEvents && "cursor-default",
+                "cursor-pointer hover:bg-surface-2",
               )}
             >
               <div className="flex w-full items-start justify-between gap-1">
@@ -200,6 +203,37 @@ export function FinCalendar({
         onClose={() => setSelectedDay(null)}
         title={selectedDay ? format(selectedDay.date, "dd 'de' MMMM", { locale: ptBR }) : ""}
         description={selectedDay ? dayDescription(selectedDay.events) : undefined}
+        footer={
+          selectedDay && (onCreateExpense || onCreateIncome) ? (
+            <>
+              {onCreateExpense && (
+                <Button
+                  variant="outline"
+                  iconLeft={<ArrowDownRight size={14} />}
+                  onClick={() => {
+                    const date = selectedDay.date;
+                    setSelectedDay(null);
+                    onCreateExpense(date);
+                  }}
+                >
+                  Despesa
+                </Button>
+              )}
+              {onCreateIncome && (
+                <Button
+                  iconLeft={<ArrowUpRight size={14} />}
+                  onClick={() => {
+                    const date = selectedDay.date;
+                    setSelectedDay(null);
+                    onCreateIncome(date);
+                  }}
+                >
+                  Receita
+                </Button>
+              )}
+            </>
+          ) : undefined
+        }
       >
         {selectedDay && (
           <DayDetails
@@ -237,6 +271,12 @@ function DayDetails({
           tone={totals.income - totals.expense >= 0 ? "success" : "danger"}
         />
       </div>
+
+      {totals.count === 0 && (
+        <div className="rounded-lg border border-dashed border-hairline px-4 py-5 text-center text-xs text-fg-muted">
+          Sem lançamentos neste dia.
+        </div>
+      )}
 
       {events.incomes.length > 0 && (
         <DetailSection title="Receitas">

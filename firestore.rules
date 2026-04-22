@@ -123,6 +123,10 @@ service cloud.firestore {
       return status == "pending" || status == "paid" || status == "overdue";
     }
 
+    function isExpensePaymentStatus(status) {
+      return status == "pending" || status == "paid";
+    }
+
     function isDebtKind(kind) {
       return kind == "negociada" || kind == "mapeada";
     }
@@ -185,7 +189,8 @@ service cloud.firestore {
     function validExpenseCreate(userId) {
       return request.resource.data.keys().hasOnly([
           'description', 'amount', 'categoryId', 'paidAt', 'expenseKind', 'method',
-          'creditCardId', 'creditCardDueAt', 'recurring', 'note', 'createdAt'
+          'creditCardId', 'creditCardDueAt', 'paymentStatus', 'paidOn', 'recurring',
+          'recurringBaseId', 'recurringOccurrence', 'note', 'createdAt'
         ]) &&
         request.resource.data.keys().hasAll(['description', 'amount', 'categoryId', 'paidAt']) &&
         request.resource.data.description is string &&
@@ -195,8 +200,12 @@ service cloud.firestore {
         request.resource.data.amount > 0 &&
         ownsCategory(userId, 'categoryId') &&
         optionalIsoDate('paidAt') &&
+        (!hasField('paymentStatus') || isExpensePaymentStatus(request.resource.data.paymentStatus)) &&
+        optionalIsoDate('paidOn') &&
         (!hasField('expenseKind') || isExpenseKind(request.resource.data.expenseKind)) &&
         optionalBool('recurring') &&
+        optionalString('recurringBaseId', 180) &&
+        optionalBool('recurringOccurrence') &&
         (!hasField('method') || isPaymentMethod(request.resource.data.method)) &&
         optionalOwnedCreditCard(userId, 'creditCardId') &&
         optionalIsoDate('creditCardDueAt') &&
@@ -207,7 +216,8 @@ service cloud.firestore {
     function validExpenseUpdate(userId) {
       return request.resource.data.keys().hasOnly([
           'description', 'amount', 'categoryId', 'paidAt', 'expenseKind', 'method',
-          'creditCardId', 'creditCardDueAt', 'recurring', 'note', 'createdAt'
+          'creditCardId', 'creditCardDueAt', 'paymentStatus', 'paidOn', 'recurring',
+          'recurringBaseId', 'recurringOccurrence', 'note', 'createdAt'
         ]) &&
         request.resource.data.keys().hasAll(['description', 'amount', 'categoryId', 'paidAt']) &&
         request.resource.data.description is string &&
@@ -217,8 +227,12 @@ service cloud.firestore {
         request.resource.data.amount > 0 &&
         ownsCategoryForUpdate(userId, 'categoryId') &&
         optionalIsoDate('paidAt') &&
+        (!hasField('paymentStatus') || isExpensePaymentStatus(request.resource.data.paymentStatus)) &&
+        optionalIsoDate('paidOn') &&
         (!hasField('expenseKind') || isExpenseKind(request.resource.data.expenseKind)) &&
         optionalBool('recurring') &&
+        optionalString('recurringBaseId', 180) &&
+        optionalBool('recurringOccurrence') &&
         (!hasField('method') || isPaymentMethod(request.resource.data.method)) &&
         optionalOwnedCreditCardForUpdate(userId, 'creditCardId') &&
         optionalIsoDate('creditCardDueAt') &&

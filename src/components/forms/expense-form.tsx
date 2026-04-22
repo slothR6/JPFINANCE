@@ -3,12 +3,13 @@
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useData } from "@/components/providers/data-provider";
 import { useToast } from "@/components/providers/toast-provider";
-import { COL, createItem, deleteItem, updateItem } from "@/services/repository";
+import { COL, createItem, deleteFieldValue, deleteItem, updateItem } from "@/services/repository";
 import type { Expense, ExpenseKind } from "@/types";
+import { expensePaymentStatus } from "@/lib/finance";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Field, FieldRow } from "@/components/ui/field";
@@ -17,14 +18,17 @@ import { MoneyInput } from "@/components/ui/money-input";
 import { getCreditCardDueDate, todayIso, formatDateBr, formatInvoiceMonth } from "@/lib/dates";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { friendlyDataError, logDevError } from "@/lib/errors";
-import { CreditCard as CreditCardIcon, Trash2 } from "lucide-react";
+import { CreditCard as CreditCardIcon, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { QuickCategoryModal } from "@/components/forms/quick-category-modal";
 
 const schema = z.object({
   description: z.string().min(1, "Informe uma descrição"),
   amount: z.number().positive("Valor deve ser maior que zero"),
   categoryId: z.string().min(1, "Selecione uma categoria"),
   paidAt: z.string().min(1, "Data obrigatória"),
+  paymentStatus: z.enum(["pending", "paid"]),
+  paidOn: z.string().optional(),
   expenseKind: z.enum(["despesa", "gasto"]).optional(),
   recurring: z.boolean().optional(),
   method: z.enum(["pix", "cartao", "dinheiro", "boleto", "transferencia", "outros"]).optional(),
@@ -38,12 +42,14 @@ interface Props {
   open: boolean;
   onClose: () => void;
   editing?: Expense | null;
+  initialDate?: string;
 }
 
-export function ExpenseForm({ open, onClose, editing }: Props) {
+export function ExpenseForm({ open, onClose, editing, initialDate }: Props) {
   const { user } = useAuth();
   const { categories, creditCards } = useData();
   const { toast } = useToast();
+  const [categoryOpen, setCategoryOpen] = useState(false);
 
   const expenseCategories = useMemo(
     () => categories.filter((c) => c.kind === "expense" && !c.archived),
@@ -62,6 +68,8 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
           amount: editing.amount,
           categoryId: editing.categoryId,
           paidAt: editing.paidAt,
+          paymentStatus: expensePaymentStatus(editing),
+          paidOn: editing.paidOn ?? "",
           expenseKind: editing.expenseKind,
           recurring: editing.recurring ?? false,
           method: editing.method,
@@ -72,7 +80,9 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
           description: "",
           amount: 0,
           categoryId: expenseCategories[0]?.id ?? "",
-          paidAt: todayIso(),
+          paidAt: initialDate ?? todayIso(),
+          paymentStatus: "pending",
+          paidOn: "",
           expenseKind: "despesa",
           recurring: false,
           method: "pix",
@@ -85,6 +95,7 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
   const method = form.watch("method");
   const creditCardId = form.watch("creditCardId");
   const paidAt = form.watch("paidAt");
+  const paymentStatus = form.watch("paymentStatus");
 
   const selectedCard = useMemo(
     () => activeCards.find((c) => c.id === creditCardId),
@@ -104,6 +115,8 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
         amount: values.amount,
         categoryId: values.categoryId,
         paidAt: values.paidAt,
+        paymentStatus: values.paymentStatus,
+        paidOn: values.paymentStatus === "paid" ? values.paidOn || todayIso() : undefined,
         expenseKind: values.expenseKind,
         recurring: values.expenseKind === "despesa" ? values.recurring : false,
         method: values.method,
@@ -112,7 +125,10 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
         note: values.note || undefined,
       };
       if (editing) {
-        await updateItem<Expense>(user.uid, COL.expenses, editing.id, payload);
+        await updateItem<Expense>(user.uid, COL.expenses, editing.id, {
+          ...payload,
+          paidOn: values.paymentStatus === "paid" ? values.paidOn || todayIso() : deleteFieldValue(),
+        });
         toast({ tone: "success", title: "Despesa atualizada" });
       } else {
         await createItem<Omit<Expense, "id">>(user.uid, COL.expenses, payload);
@@ -171,7 +187,11 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
                 type="button"
                 onClick={() => {
                   form.setValue("expenseKind", k);
-                  if (k === "gasto") form.setValue("recurring", false);
+                  if (k === "gasto") {
+                    form.setValue("recurring", false);
+                    form.setValue("paymentStatus", "paid");
+                    form.setValue("paidOn", form.getValues("paidOn") || todayIso());
+                  }
                 }}
                 className={cn(
                   "flex-1 rounded-lg border px-3 py-2 text-xs font-medium transition",
@@ -203,21 +223,32 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
               render={({ field }) => <MoneyInput value={field.value} onChange={field.onChange} />}
             />
           </Field>
-          <Field label="Data" required error={form.formState.errors.paidAt?.message}>
+          <Field label={paymentStatus === "pending" ? "Vencimento" : "Data"} required error={form.formState.errors.paidAt?.message}>
             <Input type="date" {...form.register("paidAt")} />
           </Field>
         </FieldRow>
 
         <FieldRow>
           <Field label="Categoria" required error={form.formState.errors.categoryId?.message}>
-            <Select {...form.register("categoryId")}>
-              {expenseCategories.length === 0 && <option value="">Crie uma categoria primeiro</option>}
-              {expenseCategories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
+            <div className="flex gap-2">
+              <Select {...form.register("categoryId")}>
+                {expenseCategories.length === 0 && <option value="">Crie uma categoria primeiro</option>}
+                {expenseCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0 px-3"
+                iconLeft={<Plus size={14} />}
+                onClick={() => setCategoryOpen(true)}
+              >
+                Nova
+              </Button>
+            </div>
           </Field>
           <Field label="Forma de pagamento">
             <Select {...form.register("method")}
@@ -236,6 +267,32 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
         </FieldRow>
 
         {/* Cartão de crédito */}
+        <FieldRow>
+          <Field label="Status">
+            <Select
+              {...form.register("paymentStatus")}
+              onChange={(e) => {
+                const status = e.target.value as FormValues["paymentStatus"];
+                form.setValue("paymentStatus", status);
+                if (status === "paid") form.setValue("paidOn", form.getValues("paidOn") || todayIso());
+                if (status === "pending") form.setValue("paidOn", "");
+              }}
+            >
+              <option value="pending">Pendente</option>
+              <option value="paid">Paga</option>
+            </Select>
+          </Field>
+          {paymentStatus === "paid" ? (
+            <Field label="Paga em">
+              <Input type="date" {...form.register("paidOn")} />
+            </Field>
+          ) : (
+            <div className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-xs text-warning">
+              Esta despesa entra em contas a pagar enquanto estiver pendente.
+            </div>
+          )}
+        </FieldRow>
+
         {method === "cartao" && activeCards.length > 0 && (
           <Field label="Cartão de crédito" hint="Opcional">
             <Select {...form.register("creditCardId")}>
@@ -276,6 +333,12 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
           </label>
         )}
       </form>
+      <QuickCategoryModal
+        open={categoryOpen}
+        kind="expense"
+        onClose={() => setCategoryOpen(false)}
+        onCreated={(categoryId) => form.setValue("categoryId", categoryId, { shouldDirty: true, shouldValidate: true })}
+      />
     </Drawer>
   );
 }

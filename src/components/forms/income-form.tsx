@@ -3,7 +3,7 @@
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { addMonths } from "date-fns";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useData } from "@/components/providers/data-provider";
@@ -17,8 +17,9 @@ import { Input, Select, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { parseISO, todayIso, toIso } from "@/lib/dates";
 import { friendlyDataError, logDevError } from "@/lib/errors";
-import { Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { QuickCategoryModal } from "@/components/forms/quick-category-modal";
 
 const schema = z
   .object({
@@ -47,12 +48,14 @@ interface Props {
   open: boolean;
   onClose: () => void;
   editing?: Income | null;
+  initialDate?: string;
 }
 
-export function IncomeForm({ open, onClose, editing }: Props) {
+export function IncomeForm({ open, onClose, editing, initialDate }: Props) {
   const { user } = useAuth();
   const { categories } = useData();
   const { toast } = useToast();
+  const [categoryOpen, setCategoryOpen] = useState(false);
 
   const incomeCategories = useMemo(
     () => categories.filter((c) => c.kind === "income" && !c.archived),
@@ -76,7 +79,7 @@ export function IncomeForm({ open, onClose, editing }: Props) {
           description: "",
           amount: 0,
           categoryId: incomeCategories[0]?.id ?? "",
-          receivedAt: todayIso(),
+          receivedAt: initialDate ?? todayIso(),
           recurring: false,
           installment: false,
           installments: 2,
@@ -237,14 +240,25 @@ export function IncomeForm({ open, onClose, editing }: Props) {
         )}
 
         <Field label="Categoria" required error={form.formState.errors.categoryId?.message}>
-          <Select {...form.register("categoryId")}>
-            {incomeCategories.length === 0 && <option value="">Crie uma categoria primeiro</option>}
-            {incomeCategories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
+          <div className="flex gap-2">
+            <Select {...form.register("categoryId")}>
+              {incomeCategories.length === 0 && <option value="">Crie uma categoria primeiro</option>}
+              {incomeCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 px-3"
+              iconLeft={<Plus size={14} />}
+              onClick={() => setCategoryOpen(true)}
+            >
+              Nova
+            </Button>
+          </div>
         </Field>
 
         <Field label="Observações (opcional)">
@@ -261,6 +275,12 @@ export function IncomeForm({ open, onClose, editing }: Props) {
           </label>
         )}
       </form>
+      <QuickCategoryModal
+        open={categoryOpen}
+        kind="income"
+        onClose={() => setCategoryOpen(false)}
+        onCreated={(categoryId) => form.setValue("categoryId", categoryId, { shouldDirty: true, shouldValidate: true })}
+      />
     </Drawer>
   );
 }

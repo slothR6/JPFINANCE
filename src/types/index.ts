@@ -26,13 +26,16 @@ export interface Income {
 // "despesa" = regular/fixed expense (groceries, gas, subscriptions)
 // "gasto"   = day-to-day discretionary spending (lunch, coffee, entertainment)
 export type ExpenseKind = "despesa" | "gasto";
+export type ExpensePaymentStatus = "pending" | "paid";
 
 export interface Expense {
   id: string;
   description: string;
   amount: number;
   categoryId: string;
-  paidAt: string; // ISO date
+  paidAt: string; // ISO date for the expense date / due date
+  paymentStatus?: ExpensePaymentStatus;
+  paidOn?: string; // ISO date when the obligation was settled
   expenseKind?: ExpenseKind;
   recurring?: boolean;
   recurringBaseId?: string;

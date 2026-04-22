@@ -2,7 +2,9 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
+  type FieldValue,
   getDoc,
   onSnapshot,
   orderBy,
@@ -64,7 +66,9 @@ function userDoc(uid: string, name: string, id: string) {
   return doc(db(), "users", uid, name, id);
 }
 
-function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
+type WritablePayload<T extends object> = Partial<T> | Record<string, unknown | FieldValue>;
+
+function stripUndefined<T extends Record<string, unknown | FieldValue>>(obj: T): T {
   return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined)) as T;
 }
 
@@ -107,10 +111,10 @@ export async function updateItem<T extends object>(
   uid: string,
   name: string,
   id: string,
-  data: Partial<T>,
+  data: WritablePayload<T>,
 ) {
   assertCurrentUser(uid);
-  await updateDoc(userDoc(uid, name, id), stripUndefined(data as Record<string, unknown>));
+  await updateDoc(userDoc(uid, name, id), stripUndefined(data as Record<string, unknown | FieldValue>));
 }
 
 export async function deleteItem(uid: string, name: string, id: string) {
@@ -161,4 +165,7 @@ export type {
   DebtPayment,
   UserPreferences,
 };
+export function deleteFieldValue() {
+  return deleteField();
+}
 export { PREFS_DOC };

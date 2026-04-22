@@ -6,8 +6,6 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   CalendarClock,
-  CreditCard as CreditCardIcon,
-  Landmark,
   Plus,
   Receipt,
   Target,
@@ -27,21 +25,17 @@ import { FinCalendar } from "@/components/ui/fin-calendar";
 import { TrendArea } from "@/components/charts/trend-area";
 import { CategoryBars } from "@/components/charts/category-bars";
 import {
-  debtRemaining,
+  billsForMonth,
   expensesForCompetenceMonth,
   getExpenseCompetenceDate,
-  getExpenseCreditCardDueAt,
   incomesForMonth,
-  recurringExpensesForPayableMonth,
+  pendingExpensesForPayableMonth,
   sum,
 } from "@/lib/finance";
 import {
   daysUntil,
   formatDateReadable,
-  formatDateShort,
-  formatInvoiceMonth,
   formatMonthLong,
-  monthRange,
   monthToDate,
   toIso,
 } from "@/lib/dates";
@@ -49,15 +43,6 @@ import { formatCurrency } from "@/lib/utils";
 import { IncomeForm } from "@/components/forms/income-form";
 import { ExpenseForm } from "@/components/forms/expense-form";
 import { BillForm } from "@/components/forms/bill-form";
-
-type CardInvoiceSummary = {
-  key: string;
-  dueAt: string;
-  cardName: string;
-  cardColor?: string;
-  total: number;
-  count: number;
-};
 
 type UpcomingItem =
   | {
@@ -68,7 +53,7 @@ type UpcomingItem =
       dueAt: string;
     }
   | {
-      type: "recurringExpense";
+      type: "expense";
       key: string;
       description: string;
       amount: number;
@@ -81,7 +66,6 @@ export default function DashboardPage() {
     incomes,
     expenses,
     bills,
-    debts,
     creditCards,
     preferences,
     categoryById,
@@ -92,6 +76,18 @@ export default function DashboardPage() {
   const [incomeOpen, setIncomeOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [billOpen, setBillOpen] = useState(false);
+  const [incomeInitialDate, setIncomeInitialDate] = useState<string | undefined>();
+  const [expenseInitialDate, setExpenseInitialDate] = useState<string | undefined>();
+
+  const openIncomeForm = (date?: Date) => {
+    setIncomeInitialDate(date ? toIso(date) : undefined);
+    setIncomeOpen(true);
+  };
+
+  const openExpenseForm = (date?: Date) => {
+    setExpenseInitialDate(date ? toIso(date) : undefined);
+    setExpenseOpen(true);
+  };
 
   const expenseCompetenceDate = useCallback(
     (expense: (typeof expenses)[number]) =>
@@ -111,84 +107,45 @@ export default function DashboardPage() {
   const incomeTotal = sum(monthIncomes.map((i) => i.amount));
   const expenseTotal = sum(monthExpenses.map((e) => e.amount));
 
-  // Separate despesas and gastos for display
-  const monthDespesas = useMemo(
-    () => monthExpenses.filter((e) => !e.expenseKind || e.expenseKind === "despesa"),
-    [monthExpenses],
-  );
-  const monthGastos = useMemo(
-    () => monthExpenses.filter((e) => e.expenseKind === "gasto"),
-    [monthExpenses],
-  );
-  const despesaTotal = sum(monthDespesas.map((e) => e.amount));
-  const gastoTotal = sum(monthGastos.map((e) => e.amount));
-
   const balance = incomeTotal - expenseTotal;
   const savingsRate = incomeTotal > 0 ? Math.max(0, balance) / incomeTotal : 0;
+  const pendingBills = useMemo(
+    () => billsForMonth(bills, month).filter((bill) => bill.status !== "paid"),
+    [bills, month],
+  );
+  const pendingPayableExpenses = useMemo(
+    () => pendingExpensesForPayableMonth(expenses, creditCards, month),
+    [expenses, creditCards, month],
+  );
+  const pendingBillsTotal = sum(pendingBills.map((bill) => bill.amount));
+  const pendingPayableExpensesTotal = sum(pendingPayableExpenses.map((expense) => expense.amount));
+  const payableTotal = pendingBillsTotal + pendingPayableExpensesTotal;
+  const projectedBalance = incomeTotal - expenseTotal - pendingBillsTotal;
 
   const upcoming = useMemo<UpcomingItem[]>(() => {
     const cardMap = new Map(creditCards.map((card) => [card.id, card]));
-    const billItems: UpcomingItem[] = bills
-      .filter((bill) => bill.status !== "paid")
-      .map((bill) => ({
+    const billItems: UpcomingItem[] = pendingBills.map((bill) => ({
         type: "bill" as const,
         key: `bill-${bill.id}`,
         description: bill.description,
         amount: bill.amount,
         dueAt: bill.dueAt,
       }));
-    const recurringItems: UpcomingItem[] = recurringExpensesForPayableMonth(expenses, creditCards, month).map(
-      (expense) => {
-        const card = expense.creditCardId ? cardMap.get(expense.creditCardId) : undefined;
-        return {
-          type: "recurringExpense" as const,
-          key: `recurring-expense-${expense.id}`,
-          description: expense.description,
-          amount: expense.amount,
-          dueAt: getExpenseCompetenceDate(expense, card),
-        };
-      },
-    );
-
-    return [...billItems, ...recurringItems]
-      .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.description.localeCompare(b.description))
-      .slice(0, 6);
-  }, [bills, expenses, creditCards, month]);
-
-  const upcomingCardInvoices = useMemo<CardInvoiceSummary[]>(() => {
-    const selectedMonthEnd = toIso(monthRange(month).end);
-    const cardMap = new Map(creditCards.map((card) => [card.id, card]));
-    const invoices = new Map<string, CardInvoiceSummary>();
-
-    for (const expense of expenses) {
-      if (expense.method !== "cartao") continue;
-
+    const expenseItems: UpcomingItem[] = pendingPayableExpenses.map((expense) => {
       const card = expense.creditCardId ? cardMap.get(expense.creditCardId) : undefined;
-      const dueAt = getExpenseCreditCardDueAt(expense, card);
-      if (!dueAt || dueAt <= selectedMonthEnd) continue;
-
-      const key = `${expense.creditCardId ?? "sem-cartao"}-${dueAt}`;
-      const invoice = invoices.get(key) ?? {
-        key,
-        dueAt,
-        cardName: card?.name ?? "Cartão",
-        cardColor: card?.color,
-        total: 0,
-        count: 0,
+      return {
+        type: "expense" as const,
+        key: `expense-${expense.id}`,
+        description: expense.description,
+        amount: expense.amount,
+        dueAt: getExpenseCompetenceDate(expense, card),
       };
+    });
 
-      invoice.total += expense.amount;
-      invoice.count += 1;
-      invoices.set(key, invoice);
-    }
-
-    return Array.from(invoices.values())
-      .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.cardName.localeCompare(b.cardName))
-      .slice(0, 4);
-  }, [expenses, creditCards, month]);
-
-  const activeDebts = debts.filter((d) => !d.archived);
-  const debtTotal = sum(activeDebts.map(debtRemaining));
+    return [...billItems, ...expenseItems]
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.description.localeCompare(b.description))
+      .slice(0, 5);
+  }, [pendingBills, pendingPayableExpenses, creditCards]);
 
   const budget = preferences?.monthlyBudget ?? 0;
   const budgetUsage = budget > 0 ? Math.min(1, expenseTotal / budget) : 0;
@@ -196,7 +153,7 @@ export default function DashboardPage() {
   const hello = greeting();
   const name = (user?.displayName || user?.email?.split("@")[0] || "").split(" ")[0];
 
-  const hasActivity = monthIncomes.length + monthExpenses.length + bills.length + debts.length > 0;
+  const hasActivity = monthIncomes.length + monthExpenses.length + bills.length > 0;
 
   // Filter bills for the current month for calendar
   const calendarBills = useMemo(
@@ -216,10 +173,10 @@ export default function DashboardPage() {
         description="Um panorama rápido do seu mês — sem ruído, só o que importa."
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="md" iconLeft={<Receipt size={15} />} onClick={() => setExpenseOpen(true)}>
+            <Button variant="outline" size="md" iconLeft={<Receipt size={15} />} onClick={() => openExpenseForm()}>
               Despesa
             </Button>
-            <Button size="md" iconLeft={<Plus size={15} />} onClick={() => setIncomeOpen(true)}>
+            <Button size="md" iconLeft={<Plus size={15} />} onClick={() => openIncomeForm()}>
               Receita
             </Button>
           </div>
@@ -229,10 +186,10 @@ export default function DashboardPage() {
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Stat
-          label="Saldo do mês"
-          value={formatCurrency(balance)}
+          label="Saldo projetado"
+          value={formatCurrency(projectedBalance)}
           delta={
-            balance >= 0
+            projectedBalance >= 0
               ? { value: "positivo", direction: "up", tone: "positive" }
               : { value: "negativo", direction: "down", tone: "negative" }
           }
@@ -254,221 +211,170 @@ export default function DashboardPage() {
           accent="hsl(0 74% 52%)"
         />
         <Stat
-          label="Dívidas em aberto"
-          value={formatCurrency(debtTotal)}
-          delta={{ value: `${activeDebts.length} ativas`, direction: "flat", tone: "neutral" }}
-          icon={<Landmark size={16} />}
+          label="A pagar"
+          value={formatCurrency(payableTotal)}
+          delta={{ value: `${pendingBills.length + pendingPayableExpenses.length} pendências`, direction: "flat", tone: "neutral" }}
+          icon={<CalendarClock size={16} />}
           accent="hsl(38 92% 48%)"
         />
       </div>
 
-      {/* PRIMARY ROW — Receitas vs Despesas + Próximos vencimentos */}
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <CardTitle>Receitas vs despesas</CardTitle>
-                <CardSubtitle>Últimos 6 meses</CardSubtitle>
-              </div>
-              <div className="flex items-center gap-3 text-2xs text-fg-muted">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-success" /> Receitas
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-danger" /> Despesas
-                </span>
-              </div>
+      {/* SEGUNDA FAIXA — Receitas vs Despesas */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle>Receitas vs despesas</CardTitle>
+              <CardSubtitle>Últimos 6 meses</CardSubtitle>
             </div>
-          </CardHeader>
-          <CardBody className="pt-3">
-            {hasActivity ? (
-              <TrendArea
-                incomes={incomes}
-                expenses={expenses}
-                referenceDate={monthToDate(month)}
-                expenseDate={expenseCompetenceDate}
-              />
-            ) : (
-              <EmptyState
-                title="Sem lançamentos ainda"
-                description="Registre sua primeira receita ou despesa para ver o gráfico."
-                className="py-10"
-              />
-            )}
-          </CardBody>
-        </Card>
+            <div className="flex items-center gap-3 text-2xs text-fg-muted">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-success" /> Receitas
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-danger" /> Despesas
+              </span>
+            </div>
+          </div>
+        </CardHeader>
+        <CardBody className="pt-3">
+          {hasActivity ? (
+            <TrendArea
+              incomes={incomes}
+              expenses={expenses}
+              referenceDate={monthToDate(month)}
+              expenseDate={expenseCompetenceDate}
+            />
+          ) : (
+            <EmptyState
+              title="Sem lançamentos ainda"
+              description="Registre sua primeira receita ou despesa para ver o gráfico."
+              className="py-10"
+            />
+          )}
+        </CardBody>
+      </Card>
 
-        <div className="space-y-5">
-          {/* Próximos vencimentos */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardTitle>Próximos vencimentos</CardTitle>
-                  <CardSubtitle>Suas contas a pagar</CardSubtitle>
-                </div>
-                <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setBillOpen(true)}>
-                  Nova
-                </Button>
-              </div>
-            </CardHeader>
-            <CardBody className="pt-1">
-              {upcoming.length === 0 ? (
-                <EmptyState
-                  icon={<CalendarClock size={20} />}
-                  title="Nada por aqui"
-                  description="Você não tem contas pendentes."
-                  className="py-8"
-                />
-              ) : (
-                <ul className="divide-y divide-hairline -mx-5">
-                  {upcoming.map((item) => {
-                    const dd = daysUntil(item.dueAt);
-                    const tone = dd < 0 ? "danger" : dd <= 3 ? "warning" : "neutral";
-                    return (
-                      <li key={item.key} className="flex items-center justify-between gap-3 px-5 py-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-fg">{item.description}</div>
-                          <div className="text-2xs text-fg-subtle">{formatDateReadable(item.dueAt)}</div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-medium tabular-nums text-fg">
-                            {formatCurrency(item.amount)}
-                          </span>
-                          {item.type === "recurringExpense" && <Badge tone="info">Recorrente</Badge>}
-                          <Badge tone={tone}>
-                            {dd < 0 ? `${Math.abs(dd)}d atraso` : dd === 0 ? "Hoje" : `em ${dd}d`}
-                          </Badge>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <CardTitle>Próximas faturas</CardTitle>
-                  <CardSubtitle>Faturas após o mês selecionado</CardSubtitle>
-                </div>
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-info/10 text-info">
-                  <CreditCardIcon size={14} />
-                </div>
-              </div>
-            </CardHeader>
-            <CardBody className="pt-1">
-              {upcomingCardInvoices.length === 0 ? (
-                <EmptyState
-                  icon={<CreditCardIcon size={20} />}
-                  title="Sem faturas futuras"
-                  description="Compras no cartão aparecerão aqui."
-                  className="py-7"
-                />
-              ) : (
-                <ul className="divide-y divide-hairline -mx-5">
-                  {upcomingCardInvoices.map((invoice) => {
-                    return (
-                      <li key={invoice.key} className="flex items-center justify-between gap-3 px-5 py-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <span
-                            className="h-8 w-1 shrink-0 rounded-full"
-                            style={{ backgroundColor: invoice.cardColor ?? "hsl(var(--info))" }}
-                          />
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium text-fg">{invoice.cardName}</div>
-                            <div className="truncate text-2xs text-fg-subtle">
-                              Fatura {formatInvoiceMonth(invoice.dueAt)} · vence {formatDateShort(invoice.dueAt)} ·{" "}
-                              {invoice.count} {invoice.count === 1 ? "compra" : "compras"}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3">
-                          <span className="text-sm font-medium tabular-nums text-fg">
-                            {formatCurrency(invoice.total)}
-                          </span>
-                          <Badge tone="info">{formatInvoiceMonth(invoice.dueAt)}</Badge>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </CardBody>
-          </Card>
-        </div>
-      </div>
-
-      {/* SECONDARY ROW — Onde o dinheiro foi + breakdown despesa/gasto */}
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Onde seu dinheiro foi</CardTitle>
-            <CardSubtitle>Despesas por categoria no mês</CardSubtitle>
-          </CardHeader>
-          <CardBody>
-            {monthExpenses.length === 0 ? (
-              <EmptyState
-                title="Sem despesas este mês"
-                description="Quando registrar despesas, o gráfico aparecerá aqui."
-                className="py-6"
-              />
-            ) : (
-              <CategoryBars
-                expenses={monthExpenses}
-                categories={
-                  Array.from(new Set(monthExpenses.map((e) => e.categoryId)))
-                    .map((id) => categoryById(id))
-                    .filter((c): c is NonNullable<typeof c> => Boolean(c))
-                }
-              />
-            )}
-          </CardBody>
-        </Card>
-
-        {/* Breakdown despesas vs gastos */}
+      {/* TERCEIRA FAIXA — Próximos vencimentos + Orçamento do mês */}
+      <div className="grid gap-5 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Despesas vs Gastos</CardTitle>
-            <CardSubtitle>Distribuição dos seus lançamentos</CardSubtitle>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>Próximos vencimentos</CardTitle>
+                <CardSubtitle>Suas contas a pagar</CardSubtitle>
+              </div>
+              <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setBillOpen(true)}>
+                Nova
+              </Button>
+            </div>
           </CardHeader>
-          <CardBody className="space-y-4">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-fg">Despesas regulares</span>
-                <span className="tabular-nums text-fg">{formatCurrency(despesaTotal)}</span>
-              </div>
-              <div className="text-2xs text-fg-subtle">{monthDespesas.length} lançamentos (mercado, contas, parcelas)</div>
-              <Progress
-                value={expenseTotal > 0 ? despesaTotal / expenseTotal : 0}
-                tone="brand"
-              />
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-fg">Gastos do dia a dia</span>
-                <span className="tabular-nums text-fg">{formatCurrency(gastoTotal)}</span>
-              </div>
-              <div className="text-2xs text-fg-subtle">{monthGastos.length} lançamentos (refeições, lazer, compras)</div>
-              <Progress
-                value={expenseTotal > 0 ? gastoTotal / expenseTotal : 0}
-                tone="warning"
-              />
-            </div>
-            {monthGastos.length + monthDespesas.length === 0 && (
+          <CardBody className="pt-1">
+            {upcoming.length === 0 ? (
               <EmptyState
-                title="Sem registros"
-                description="Comece registrando uma despesa ou gasto."
-                className="py-4"
+                icon={<CalendarClock size={20} />}
+                title="Nada por aqui"
+                description="Você não tem contas pendentes."
+                className="py-8"
               />
+            ) : (
+              <ul className="divide-y divide-hairline -mx-5">
+                {upcoming.map((item) => {
+                  const dd = daysUntil(item.dueAt);
+                  const tone = dd < 0 ? "danger" : dd <= 3 ? "warning" : "neutral";
+                  return (
+                    <li key={item.key} className="flex items-center justify-between gap-3 px-5 py-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-fg">{item.description}</div>
+                        <div className="text-2xs text-fg-subtle">{formatDateReadable(item.dueAt)}</div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium tabular-nums text-fg">
+                          {formatCurrency(item.amount)}
+                        </span>
+                        {item.type === "expense" && <Badge tone="info">Despesa</Badge>}
+                        <Badge tone={tone}>
+                          {dd < 0 ? `${Math.abs(dd)}d atraso` : dd === 0 ? "Hoje" : `em ${dd}d`}
+                        </Badge>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </CardBody>
         </Card>
+
+        {budget > 0 ? (
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Orçamento do mês</CardTitle>
+                  <CardSubtitle>Uso do limite definido</CardSubtitle>
+                </div>
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand">
+                  <Target size={13} />
+                </div>
+              </div>
+            </CardHeader>
+            <CardBody className="space-y-4">
+              <div>
+                <div className="mb-2 flex items-end justify-between">
+                  <span className="text-2xs uppercase tracking-wide text-fg-subtle">Usado</span>
+                  <span className="text-xs font-medium text-fg-muted tabular-nums">
+                    {formatCurrency(expenseTotal)} / {formatCurrency(budget)}
+                  </span>
+                </div>
+                <Progress
+                  value={budgetUsage}
+                  tone={budgetUsage > 0.9 ? "danger" : budgetUsage > 0.7 ? "warning" : "brand"}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <MiniStat label="Disponível" value={formatCurrency(Math.max(0, budget - expenseTotal))} />
+                <MiniStat label="A pagar" value={formatCurrency(payableTotal)} />
+                <MiniStat label="Economia" value={`${(savingsRate * 100).toFixed(0)}%`} />
+                <MiniStat label="Pendente" value={formatCurrency(pendingPayableExpensesTotal + pendingBillsTotal)} />
+              </div>
+            </CardBody>
+          </Card>
+        ) : (
+          <div className="rounded-xl border border-dashed border-hairline p-4 text-center text-sm text-fg-subtle">
+            Defina um{" "}
+            <Link href="/configuracoes" className="font-medium text-fg underline-offset-2 hover:underline">
+              orçamento mensal
+            </Link>{" "}
+            nas configurações.
+          </div>
+        )}
       </div>
+
+      {/* QUARTA FAIXA — Onde o dinheiro foi */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Onde seu dinheiro foi</CardTitle>
+          <CardSubtitle>Despesas por categoria no mês</CardSubtitle>
+        </CardHeader>
+        <CardBody>
+          {monthExpenses.length === 0 ? (
+            <EmptyState
+              title="Sem despesas este mês"
+              description="Quando registrar despesas, o gráfico aparecerá aqui."
+              className="py-6"
+            />
+          ) : (
+            <CategoryBars
+              expenses={monthExpenses}
+              categories={
+                Array.from(new Set(monthExpenses.map((e) => e.categoryId)))
+                  .map((id) => categoryById(id))
+                  .filter((c): c is NonNullable<typeof c> => Boolean(c))
+              }
+            />
+          )}
+        </CardBody>
+      </Card>
 
       {/* CALENDAR */}
       <Card>
@@ -478,9 +384,14 @@ export default function DashboardPage() {
               <CardTitle>Calendário do mês</CardTitle>
               <CardSubtitle>Dias com receitas, despesas e contas a pagar</CardSubtitle>
             </div>
-            <Button size="sm" variant="outline" iconLeft={<Plus size={14} />} onClick={() => setExpenseOpen(true)}>
-              Registrar
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" iconLeft={<Receipt size={14} />} onClick={() => openExpenseForm()}>
+                Despesa
+              </Button>
+              <Button size="sm" iconLeft={<Plus size={14} />} onClick={() => openIncomeForm()}>
+                Receita
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardBody>
@@ -493,59 +404,14 @@ export default function DashboardPage() {
             categoryById={categoryById}
             creditCardById={creditCardById}
             expenseDate={expenseCompetenceDate}
+            onCreateExpense={openExpenseForm}
+            onCreateIncome={openIncomeForm}
           />
         </CardBody>
       </Card>
 
-      {/* BUDGET — lower priority, less prominent */}
-      {budget > 0 && (
-        <Card className="opacity-90">
-          <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <CardTitle>Orçamento do mês</CardTitle>
-                <CardSubtitle>Seu limite pessoal de gastos</CardSubtitle>
-              </div>
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-soft text-brand">
-                <Target size={13} />
-              </div>
-            </div>
-          </CardHeader>
-          <CardBody className="space-y-4">
-            <div>
-              <div className="mb-2 flex items-end justify-between">
-                <span className="text-2xs uppercase tracking-wide text-fg-subtle">Usado</span>
-                <span className="text-xs font-medium text-fg-muted tabular-nums">
-                  {formatCurrency(expenseTotal)} / {formatCurrency(budget)}
-                </span>
-              </div>
-              <Progress
-                value={budgetUsage}
-                tone={budgetUsage > 0.9 ? "danger" : budgetUsage > 0.7 ? "warning" : "brand"}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <MiniStat label="Taxa de economia" value={`${(savingsRate * 100).toFixed(0)}%`} />
-              <MiniStat label="Disponível" value={formatCurrency(Math.max(0, budget - expenseTotal))} />
-              <MiniStat label="Despesas regulares" value={formatCurrency(despesaTotal)} />
-              <MiniStat label="Gastos do dia" value={formatCurrency(gastoTotal)} />
-            </div>
-          </CardBody>
-        </Card>
-      )}
-
-      {budget === 0 && (
-        <div className="rounded-xl border border-dashed border-hairline p-4 text-center text-sm text-fg-subtle">
-          Defina um{" "}
-          <Link href="/configuracoes" className="font-medium text-fg underline-offset-2 hover:underline">
-            orçamento mensal
-          </Link>{" "}
-          nas configurações para acompanhar seu limite.
-        </div>
-      )}
-
-      <IncomeForm open={incomeOpen} onClose={() => setIncomeOpen(false)} />
-      <ExpenseForm open={expenseOpen} onClose={() => setExpenseOpen(false)} />
+      <IncomeForm open={incomeOpen} onClose={() => setIncomeOpen(false)} initialDate={incomeInitialDate} />
+      <ExpenseForm open={expenseOpen} onClose={() => setExpenseOpen(false)} initialDate={expenseInitialDate} />
       <BillForm open={billOpen} onClose={() => setBillOpen(false)} />
     </div>
   );
@@ -553,7 +419,7 @@ export default function DashboardPage() {
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-hairline bg-surface-2/40 p-3">
+    <div className="min-w-0">
       <div className="text-2xs text-fg-subtle">{label}</div>
       <div className="mt-0.5 text-sm font-semibold text-fg tabular-nums">{value}</div>
     </div>

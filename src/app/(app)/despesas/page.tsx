@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Receipt } from "lucide-react";
+import { Check, Plus, Receipt, RotateCcw } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { useData } from "@/components/providers/data-provider";
 import { useMonth } from "@/components/providers/month-provider";
+import { useToast } from "@/components/providers/toast-provider";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardSubtitle, CardTitle } from "@/components/ui/card";
@@ -12,19 +14,26 @@ import { Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ListRow } from "@/components/layout/list-row";
 import { ExpenseForm } from "@/components/forms/expense-form";
-import { expensesForMonth, getExpenseCreditCardDueAt, sum } from "@/lib/finance";
-import { formatDateReadable, formatDateShort, formatInvoiceMonth, formatMonthLong } from "@/lib/dates";
+import { expensePaymentStatus, expensesForMonth, getExpenseCreditCardDueAt, sum } from "@/lib/finance";
+import { formatDateReadable, formatDateShort, formatInvoiceMonth, formatMonthLong, todayIso } from "@/lib/dates";
 import { formatCurrency } from "@/lib/utils";
 import { PAYMENT_METHODS } from "@/lib/constants";
+import { COL, deleteFieldValue, updateItem } from "@/services/repository";
+import { friendlyDataError, logDevError } from "@/lib/errors";
 import type { Expense } from "@/types";
 
+type StatusFilter = "all" | "pending" | "paid";
+
 export default function DespesasPage() {
+  const { user } = useAuth();
   const { expenses, categories, categoryById, creditCardById } = useData();
   const { month } = useMonth();
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string>("all");
+  const [status, setStatus] = useState<StatusFilter>("all");
 
   const expenseCategories = categories.filter((c) => c.kind === "expense");
 
@@ -34,8 +43,9 @@ export default function DespesasPage() {
     return monthly
       .filter((e) => (ql ? e.description.toLowerCase().includes(ql) : true))
       .filter((e) => (cat === "all" ? true : e.categoryId === cat))
+      .filter((e) => (status === "all" ? true : expensePaymentStatus(e) === status))
       .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
-  }, [monthly, q, cat]);
+  }, [monthly, q, cat, status]);
 
   const total = sum(filtered.map((e) => e.amount));
 
@@ -52,6 +62,21 @@ export default function DespesasPage() {
     setOpen(true);
   };
 
+  const togglePaid = async (expense: Expense) => {
+    if (!user) return;
+    const shouldMarkPaid = expensePaymentStatus(expense) !== "paid";
+    try {
+      await updateItem<Expense>(user.uid, COL.expenses, expense.id, {
+        paymentStatus: shouldMarkPaid ? "paid" : "pending",
+        paidOn: shouldMarkPaid ? todayIso() : deleteFieldValue(),
+      });
+      toast({ tone: "success", title: shouldMarkPaid ? "Despesa marcada como paga" : "Despesa voltou para pendente" });
+    } catch (err) {
+      logDevError("Failed to update expense status.", err);
+      toast({ tone: "error", title: "Erro", description: friendlyDataError(err) });
+    }
+  };
+
   const methodLabel = (m?: Expense["method"]) =>
     PAYMENT_METHODS.find((p) => p.value === m)?.label ?? "—";
 
@@ -66,17 +91,17 @@ export default function DespesasPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <CardTitle>Lançamentos do mês</CardTitle>
-              <CardSubtitle>Refine por categoria ou palavra-chave</CardSubtitle>
+              <CardSubtitle>Refine por categoria, status ou palavra-chave</CardSubtitle>
             </div>
-            <div className="flex w-full gap-2 sm:w-auto">
+            <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
               <Input
                 placeholder="Buscar..."
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                className="sm:w-56"
+                className="sm:w-52"
               />
               <Select value={cat} onChange={(e) => setCat(e.target.value)} className="sm:w-44">
                 <option value="all">Todas categorias</option>
@@ -85,6 +110,11 @@ export default function DespesasPage() {
                     {c.name}
                   </option>
                 ))}
+              </Select>
+              <Select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} className="sm:w-36">
+                <option value="all">Todos status</option>
+                <option value="pending">Pendentes</option>
+                <option value="paid">Pagas</option>
               </Select>
             </div>
           </div>
@@ -106,32 +136,47 @@ export default function DespesasPage() {
                   e,
                   e.creditCardId ? creditCardById(e.creditCardId) : undefined,
                 );
+                const isPaid = expensePaymentStatus(e) === "paid";
                 return (
-                  <li key={e.id}>
-                    <ListRow
-                      onClick={() => openEdit(e)}
-                      dot={c?.color}
-                      title={e.description}
-                      subtitle={formatDateReadable(e.paidAt)}
-                      tags={
-                        <>
-                          {c && <Badge tone="neutral">{c.name}</Badge>}
-                          <Badge tone="neutral">{methodLabel(e.method)}</Badge>
-                          {e.recurring && <Badge tone="info">Recorrente</Badge>}
-                          {e.method === "cartao" && cardDueAt && (
-                            <>
-                              <Badge tone="info">Fatura {formatInvoiceMonth(cardDueAt)}</Badge>
-                              <Badge tone="neutral">Vence {formatDateShort(cardDueAt)}</Badge>
-                            </>
-                          )}
-                        </>
+                  <li key={e.id} className="flex items-stretch">
+                    <div className="min-w-0 flex-1">
+                      <ListRow
+                        onClick={() => openEdit(e)}
+                        dot={c?.color}
+                        title={e.description}
+                        subtitle={formatDateReadable(e.paidAt)}
+                        tags={
+                          <>
+                            <Badge tone={isPaid ? "success" : "warning"}>{isPaid ? "Paga" : "Pendente"}</Badge>
+                            {c && <Badge tone="neutral">{c.name}</Badge>}
+                            <Badge tone="neutral">{methodLabel(e.method)}</Badge>
+                            {e.recurring && <Badge tone="info">Recorrente</Badge>}
+                            {e.method === "cartao" && cardDueAt && (
+                              <>
+                                <Badge tone="info">Fatura {formatInvoiceMonth(cardDueAt)}</Badge>
+                                <Badge tone="neutral">Vence {formatDateShort(cardDueAt)}</Badge>
+                              </>
+                            )}
+                          </>
+                        }
+                        right={
+                          <span className="font-display text-sm font-semibold text-fg tabular-nums">
+                            − {formatCurrency(e.amount)}
+                          </span>
+                        }
+                      />
+                    </div>
+                    <button
+                      onClick={() => void togglePaid(e)}
+                      className={
+                        "flex min-w-[4.75rem] items-center justify-center gap-1 border-l border-hairline px-3 text-xs font-medium transition " +
+                        (isPaid ? "text-fg-muted hover:bg-surface-2 hover:text-fg" : "text-success hover:bg-success/10")
                       }
-                      right={
-                        <span className="font-display text-sm font-semibold text-fg tabular-nums">
-                          − {formatCurrency(e.amount)}
-                        </span>
-                      }
-                    />
+                      title={isPaid ? "Voltar para pendente" : "Marcar como paga"}
+                    >
+                      {isPaid ? <RotateCcw size={14} /> : <Check size={14} />}
+                      <span className="hidden sm:inline">{isPaid ? "Pendente" : "Pagar"}</span>
+                    </button>
                   </li>
                 );
               })}

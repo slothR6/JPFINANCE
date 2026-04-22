@@ -7,7 +7,7 @@ import { useMemo } from "react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useData } from "@/components/providers/data-provider";
 import { useToast } from "@/components/providers/toast-provider";
-import { COL, createItem, deleteItem, updateItem } from "@/services/repository";
+import { COL, createItem, deleteFieldValue, deleteItem, updateItem } from "@/services/repository";
 import type { Bill, BillStatus } from "@/types";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -78,7 +78,10 @@ export function BillForm({ open, onClose, editing }: Props) {
     if (payload.status === "paid" && !payload.paidAt) payload.paidAt = todayIso();
     try {
       if (editing) {
-        await updateItem<Bill>(user.uid, COL.bills, editing.id, payload);
+        await updateItem<Bill>(user.uid, COL.bills, editing.id, {
+          ...payload,
+          paidAt: payload.status === "paid" ? payload.paidAt : deleteFieldValue(),
+        });
         toast({ tone: "success", title: "Conta atualizada" });
       } else {
         await createItem<Omit<Bill, "id">>(user.uid, COL.bills, payload as Omit<Bill, "id">);
