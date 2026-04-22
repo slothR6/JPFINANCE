@@ -15,6 +15,7 @@ import { Field, FieldRow } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { todayIso } from "@/lib/dates";
+import { friendlyDataError, logDevError } from "@/lib/errors";
 import { Trash2 } from "lucide-react";
 
 const schema = z.object({
@@ -78,8 +79,9 @@ export function IncomeForm({ open, onClose, editing }: Props) {
       }
       onClose();
       form.reset();
-    } catch {
-      toast({ tone: "error", title: "Erro ao salvar" });
+    } catch (err) {
+      logDevError("Failed to save income.", err);
+      toast({ tone: "error", title: "Erro ao salvar", description: friendlyDataError(err) });
     }
   });
 
@@ -89,8 +91,9 @@ export function IncomeForm({ open, onClose, editing }: Props) {
       await deleteItem(user.uid, COL.incomes, editing.id);
       toast({ tone: "success", title: "Receita excluída" });
       onClose();
-    } catch {
-      toast({ tone: "error", title: "Erro ao excluir" });
+    } catch (err) {
+      logDevError("Failed to delete income.", err);
+      toast({ tone: "error", title: "Erro ao excluir", description: friendlyDataError(err) });
     }
   };
 

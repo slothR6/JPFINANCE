@@ -16,9 +16,17 @@ const display = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "JPFINANCE — seu controle financeiro pessoal",
+  title: {
+    default: "JPFINANCE | Seu controle financeiro pessoal",
+    template: "%s | JPFINANCE",
+  },
   description:
     "Organize receitas, despesas, contas e dívidas em um espaço pessoal, claro e tranquilo.",
+  applicationName: "JPFINANCE",
+  icons: {
+    icon: [{ url: "/branding/jpfinance-mark.png", type: "image/png", sizes: "512x512" }],
+    apple: [{ url: "/branding/jpfinance-mark.png", type: "image/png", sizes: "512x512" }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

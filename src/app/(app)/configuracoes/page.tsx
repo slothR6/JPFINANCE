@@ -16,6 +16,7 @@ import { CategoryForm } from "@/components/forms/category-form";
 import { CreditCardForm } from "@/components/forms/credit-card-form";
 import { savePreferences } from "@/services/repository";
 import type { Category, CategoryKind, CreditCard } from "@/types";
+import { friendlyDataError, logDevError } from "@/lib/errors";
 import { initialsFromName } from "@/lib/utils";
 
 export default function ConfiguracoesPage() {
@@ -56,8 +57,9 @@ export default function ConfiguracoesPage() {
         theme: preferences?.theme ?? "system",
       });
       toast({ tone: "success", title: "Preferências atualizadas" });
-    } catch {
-      toast({ tone: "error", title: "Erro ao salvar" });
+    } catch (err) {
+      logDevError("Failed to save preferences.", err);
+      toast({ tone: "error", title: "Erro ao salvar", description: friendlyDataError(err) });
     } finally {
       setSaving(false);
     }

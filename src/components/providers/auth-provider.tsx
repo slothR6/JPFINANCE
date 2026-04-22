@@ -18,13 +18,19 @@ import { DEFAULT_CATEGORIES } from "@/lib/constants";
 import { createItem, COL, savePreferences } from "@/services/repository";
 
 const SESSION_COOKIE = "jpf-session";
+const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 14;
 
 function setSessionCookie(value: string | null) {
   if (typeof document === "undefined") return;
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  const attributes = `Path=/; SameSite=Lax${secure}`;
+
+  // This is an unsigned UX marker for middleware redirects only.
+  // It is not a Firebase session and must never authorize data access.
   if (!value) {
-    document.cookie = `${SESSION_COOKIE}=; path=/; max-age=0; samesite=lax`;
+    document.cookie = `${SESSION_COOKIE}=; Max-Age=0; ${attributes}`;
   } else {
-    document.cookie = `${SESSION_COOKIE}=${value}; path=/; max-age=${60 * 60 * 24 * 14}; samesite=lax`;
+    document.cookie = `${SESSION_COOKIE}=1; Max-Age=${SESSION_COOKIE_MAX_AGE}; ${attributes}`;
   }
 }
 

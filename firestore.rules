@@ -2,12 +2,429 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function hasField(field) {
+      return request.resource.data.keys().hasAny([field]);
+    }
+
+    function hasExistingField(field) {
+      return resource.data.keys().hasAny([field]);
+    }
+
+    function optionalString(field, max) {
+      return !hasField(field) ||
+        (request.resource.data[field] is string && request.resource.data[field].size() <= max);
+    }
+
+    function optionalBool(field) {
+      return !hasField(field) || request.resource.data[field] is bool;
+    }
+
+    function optionalNumber(field) {
+      return !hasField(field) || request.resource.data[field] is number;
+    }
+
+    function optionalPositiveNumber(field) {
+      return !hasField(field) ||
+        (request.resource.data[field] is number && request.resource.data[field] > 0);
+    }
+
+    function optionalNonNegativeNumber(field) {
+      return !hasField(field) ||
+        (request.resource.data[field] is number && request.resource.data[field] >= 0);
+    }
+
+    function optionalIsoDate(field) {
+      return !hasField(field) ||
+        (request.resource.data[field] is string && request.resource.data[field].size() == 10);
+    }
+
+    function validCreatedAt() {
+      return !hasField('createdAt') || request.resource.data.createdAt is timestamp;
+    }
+
+    function createdAtUnchanged() {
+      return (!('createdAt' in resource.data) && !hasField('createdAt')) ||
+        (('createdAt' in resource.data) && request.resource.data.createdAt == resource.data.createdAt);
+    }
+
+    function ownsCategory(userId, field) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() > 0 &&
+        exists(/databases/$(database)/documents/users/$(userId)/categories/$(request.resource.data[field]));
+    }
+
+    function optionalOwnedCategory(userId, field) {
+      return !hasField(field) ||
+        request.resource.data[field] == "" ||
+        ownsCategory(userId, field);
+    }
+
+    function ownsCategoryForUpdate(userId, field) {
+      return ownsCategory(userId, field) ||
+        (hasExistingField(field) && request.resource.data[field] == resource.data[field]);
+    }
+
+    function optionalOwnedCategoryForUpdate(userId, field) {
+      return !hasField(field) ||
+        request.resource.data[field] == "" ||
+        ownsCategoryForUpdate(userId, field);
+    }
+
+    function optionalOwnedCreditCard(userId, field) {
+      return !hasField(field) ||
+        request.resource.data[field] == "" ||
+        (
+          request.resource.data[field] is string &&
+          request.resource.data[field].size() > 0 &&
+          exists(/databases/$(database)/documents/users/$(userId)/creditCards/$(request.resource.data[field]))
+        );
+    }
+
+    function optionalOwnedCreditCardForUpdate(userId, field) {
+      return !hasField(field) ||
+        request.resource.data[field] == "" ||
+        (hasExistingField(field) && request.resource.data[field] == resource.data[field]) ||
+        optionalOwnedCreditCard(userId, field);
+    }
+
+    function ownsDebt(userId, field) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() > 0 &&
+        exists(/databases/$(database)/documents/users/$(userId)/debts/$(request.resource.data[field]));
+    }
+
+    function ownsDebtForUpdate(userId, field) {
+      return ownsDebt(userId, field) ||
+        (hasExistingField(field) && request.resource.data[field] == resource.data[field]);
+    }
+
+    function isCategoryKind(kind) {
+      return kind == "income" || kind == "expense";
+    }
+
+    function isExpenseKind(kind) {
+      return kind == "despesa" || kind == "gasto";
+    }
+
+    function isPaymentMethod(method) {
+      return method == "pix" ||
+        method == "cartao" ||
+        method == "dinheiro" ||
+        method == "boleto" ||
+        method == "transferencia" ||
+        method == "outros";
+    }
+
+    function isBillStatus(status) {
+      return status == "pending" || status == "paid" || status == "overdue";
+    }
+
+    function isDebtKind(kind) {
+      return kind == "negociada" || kind == "mapeada";
+    }
+
+    function validCategory() {
+      return request.resource.data.keys().hasOnly([
+          'name', 'kind', 'color', 'icon', 'order', 'archived', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll(['name', 'kind', 'color']) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 80 &&
+        isCategoryKind(request.resource.data.kind) &&
+        request.resource.data.color is string &&
+        request.resource.data.color.size() > 0 &&
+        request.resource.data.color.size() <= 20 &&
+        optionalString('icon', 40) &&
+        optionalNumber('order') &&
+        optionalBool('archived') &&
+        validCreatedAt();
+    }
+
+    function validIncomeCreate(userId) {
+      return request.resource.data.keys().hasOnly([
+          'description', 'amount', 'categoryId', 'receivedAt', 'recurring', 'note', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll(['description', 'amount', 'categoryId', 'receivedAt']) &&
+        request.resource.data.description is string &&
+        request.resource.data.description.size() > 0 &&
+        request.resource.data.description.size() <= 140 &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        ownsCategory(userId, 'categoryId') &&
+        optionalIsoDate('receivedAt') &&
+        optionalBool('recurring') &&
+        optionalString('note', 500) &&
+        validCreatedAt();
+    }
+
+    function validIncomeUpdate(userId) {
+      return validIncomeCreate(userId) ||
+        (
+          request.resource.data.keys().hasOnly([
+            'description', 'amount', 'categoryId', 'receivedAt', 'recurring', 'note', 'createdAt'
+          ]) &&
+          request.resource.data.keys().hasAll(['description', 'amount', 'categoryId', 'receivedAt']) &&
+          request.resource.data.description is string &&
+          request.resource.data.description.size() > 0 &&
+          request.resource.data.description.size() <= 140 &&
+          request.resource.data.amount is number &&
+          request.resource.data.amount > 0 &&
+          ownsCategoryForUpdate(userId, 'categoryId') &&
+          optionalIsoDate('receivedAt') &&
+          optionalBool('recurring') &&
+          optionalString('note', 500) &&
+          validCreatedAt()
+        );
+    }
+
+    function validExpenseCreate(userId) {
+      return request.resource.data.keys().hasOnly([
+          'description', 'amount', 'categoryId', 'paidAt', 'expenseKind', 'method',
+          'creditCardId', 'creditCardDueAt', 'note', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll(['description', 'amount', 'categoryId', 'paidAt']) &&
+        request.resource.data.description is string &&
+        request.resource.data.description.size() > 0 &&
+        request.resource.data.description.size() <= 140 &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        ownsCategory(userId, 'categoryId') &&
+        optionalIsoDate('paidAt') &&
+        (!hasField('expenseKind') || isExpenseKind(request.resource.data.expenseKind)) &&
+        (!hasField('method') || isPaymentMethod(request.resource.data.method)) &&
+        optionalOwnedCreditCard(userId, 'creditCardId') &&
+        optionalIsoDate('creditCardDueAt') &&
+        optionalString('note', 500) &&
+        validCreatedAt();
+    }
+
+    function validExpenseUpdate(userId) {
+      return request.resource.data.keys().hasOnly([
+          'description', 'amount', 'categoryId', 'paidAt', 'expenseKind', 'method',
+          'creditCardId', 'creditCardDueAt', 'note', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll(['description', 'amount', 'categoryId', 'paidAt']) &&
+        request.resource.data.description is string &&
+        request.resource.data.description.size() > 0 &&
+        request.resource.data.description.size() <= 140 &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        ownsCategoryForUpdate(userId, 'categoryId') &&
+        optionalIsoDate('paidAt') &&
+        (!hasField('expenseKind') || isExpenseKind(request.resource.data.expenseKind)) &&
+        (!hasField('method') || isPaymentMethod(request.resource.data.method)) &&
+        optionalOwnedCreditCardForUpdate(userId, 'creditCardId') &&
+        optionalIsoDate('creditCardDueAt') &&
+        optionalString('note', 500) &&
+        validCreatedAt();
+    }
+
+    function validBillCreate(userId) {
+      return request.resource.data.keys().hasOnly([
+          'description', 'amount', 'categoryId', 'dueAt', 'paidAt', 'status', 'note', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll(['description', 'amount', 'dueAt', 'status']) &&
+        request.resource.data.description is string &&
+        request.resource.data.description.size() > 0 &&
+        request.resource.data.description.size() <= 140 &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        optionalOwnedCategory(userId, 'categoryId') &&
+        optionalIsoDate('dueAt') &&
+        optionalIsoDate('paidAt') &&
+        isBillStatus(request.resource.data.status) &&
+        optionalString('note', 500) &&
+        validCreatedAt();
+    }
+
+    function validBillUpdate(userId) {
+      return request.resource.data.keys().hasOnly([
+          'description', 'amount', 'categoryId', 'dueAt', 'paidAt', 'status', 'note', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll(['description', 'amount', 'dueAt', 'status']) &&
+        request.resource.data.description is string &&
+        request.resource.data.description.size() > 0 &&
+        request.resource.data.description.size() <= 140 &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        optionalOwnedCategoryForUpdate(userId, 'categoryId') &&
+        optionalIsoDate('dueAt') &&
+        optionalIsoDate('paidAt') &&
+        isBillStatus(request.resource.data.status) &&
+        optionalString('note', 500) &&
+        validCreatedAt();
+    }
+
+    function validNegotiatedDebtFields() {
+      return request.resource.data.installments is int &&
+        request.resource.data.installments > 0 &&
+        request.resource.data.paidInstallments is int &&
+        request.resource.data.paidInstallments >= 0 &&
+        request.resource.data.paidInstallments <= request.resource.data.installments &&
+        request.resource.data.installmentAmount is number &&
+        request.resource.data.installmentAmount > 0 &&
+        hasField('firstDueAt') &&
+        optionalIsoDate('firstDueAt');
+    }
+
+    function validDebt() {
+      return request.resource.data.keys().hasOnly([
+          'name', 'creditor', 'debtKind', 'totalAmount', 'installments', 'paidInstallments',
+          'installmentAmount', 'firstDueAt', 'interestRate', 'note', 'archived', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll(['name', 'debtKind', 'totalAmount']) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 120 &&
+        isDebtKind(request.resource.data.debtKind) &&
+        request.resource.data.totalAmount is number &&
+        request.resource.data.totalAmount > 0 &&
+        (
+          request.resource.data.debtKind == "mapeada" ||
+          validNegotiatedDebtFields()
+        ) &&
+        optionalString('creditor', 120) &&
+        optionalNonNegativeNumber('interestRate') &&
+        optionalString('note', 500) &&
+        optionalBool('archived') &&
+        validCreatedAt();
+    }
+
+    function validDebtPaymentCreate(userId) {
+      return request.resource.data.keys().hasOnly([
+          'debtId', 'amount', 'paidAt', 'installmentNumber', 'note', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll(['debtId', 'amount', 'paidAt']) &&
+        ownsDebt(userId, 'debtId') &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        optionalIsoDate('paidAt') &&
+        (!hasField('installmentNumber') ||
+          (request.resource.data.installmentNumber is int && request.resource.data.installmentNumber > 0)) &&
+        optionalString('note', 500) &&
+        validCreatedAt();
+    }
+
+    function validDebtPaymentUpdate(userId) {
+      return request.resource.data.keys().hasOnly([
+          'debtId', 'amount', 'paidAt', 'installmentNumber', 'note', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll(['debtId', 'amount', 'paidAt']) &&
+        ownsDebtForUpdate(userId, 'debtId') &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        optionalIsoDate('paidAt') &&
+        (!hasField('installmentNumber') ||
+          (request.resource.data.installmentNumber is int && request.resource.data.installmentNumber > 0)) &&
+        optionalString('note', 500) &&
+        validCreatedAt();
+    }
+
+    function validCreditCard() {
+      return request.resource.data.keys().hasOnly([
+          'name', 'lastDigits', 'closingDay', 'dueDay', 'limit', 'color', 'archived', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasAll(['name', 'closingDay', 'dueDay']) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 80 &&
+        request.resource.data.closingDay is int &&
+        request.resource.data.closingDay >= 1 &&
+        request.resource.data.closingDay <= 28 &&
+        request.resource.data.dueDay is int &&
+        request.resource.data.dueDay >= 1 &&
+        request.resource.data.dueDay <= 28 &&
+        optionalString('lastDigits', 4) &&
+        optionalPositiveNumber('limit') &&
+        optionalString('color', 20) &&
+        optionalBool('archived') &&
+        validCreatedAt();
+    }
+
+    function validPreferences() {
+      return request.resource.data.keys().hasOnly([
+          'displayName', 'currency', 'monthlyBudget', 'savingsGoal', 'theme'
+        ]) &&
+        request.resource.data.keys().hasAll(['currency', 'theme']) &&
+        request.resource.data.currency == "BRL" &&
+        (
+          request.resource.data.theme == "light" ||
+          request.resource.data.theme == "dark" ||
+          request.resource.data.theme == "system"
+        ) &&
+        optionalString('displayName', 100) &&
+        optionalNonNegativeNumber('monthlyBudget') &&
+        optionalNonNegativeNumber('savingsGoal');
+    }
+
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow get, list: if isOwner(userId);
+      allow create, update, delete: if false;
+
+      match /categories/{categoryId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && validCategory();
+        allow update: if isOwner(userId) && validCategory() && createdAtUnchanged();
+      }
+
+      match /incomes/{incomeId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && validIncomeCreate(userId);
+        allow update: if isOwner(userId) && validIncomeUpdate(userId) && createdAtUnchanged();
+      }
+
+      match /expenses/{expenseId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && validExpenseCreate(userId);
+        allow update: if isOwner(userId) && validExpenseUpdate(userId) && createdAtUnchanged();
+      }
+
+      match /bills/{billId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && validBillCreate(userId);
+        allow update: if isOwner(userId) && validBillUpdate(userId) && createdAtUnchanged();
+      }
+
+      match /debts/{debtId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && validDebt();
+        allow update: if isOwner(userId) && validDebt() && createdAtUnchanged();
+      }
+
+      match /debtPayments/{paymentId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && validDebtPaymentCreate(userId);
+        allow update: if isOwner(userId) && validDebtPaymentUpdate(userId) && createdAtUnchanged();
+      }
+
+      match /creditCards/{cardId} {
+        allow read, delete: if isOwner(userId);
+        allow create: if isOwner(userId) && validCreditCard();
+        allow update: if isOwner(userId) && validCreditCard() && createdAtUnchanged();
+      }
+
+      match /meta/preferences {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) && validPreferences();
+        allow delete: if false;
+      }
+
+      match /meta/{document} {
+        allow read, write: if false;
+      }
 
       match /{document=**} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if false;
       }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { safeInternalPath } from "@/lib/safe-redirect";
 
+// Client-set UX marker only. Firebase Auth + Firestore Rules are the real data boundary.
+const UX_SESSION_COOKIE = "jpf-session";
 const PROTECTED = [
   "/dashboard",
   "/receitas",
@@ -12,19 +15,16 @@ const PROTECTED = [
 ];
 
 export function middleware(request: NextRequest) {
-  const session = request.cookies.get("jpf-session")?.value;
+  const sessionMarker = request.cookies.get(UX_SESSION_COOKIE)?.value;
   const { pathname } = request.nextUrl;
 
-  const isProtected = PROTECTED.some((p) => pathname.startsWith(p));
+  const isProtected = PROTECTED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-  if (isProtected && !session) {
+  if (isProtected && !sessionMarker) {
     const url = new URL("/login", request.url);
-    if (pathname !== "/dashboard") url.searchParams.set("next", pathname);
+    const next = safeInternalPath(`${pathname}${request.nextUrl.search}`);
+    if (next !== "/dashboard") url.searchParams.set("next", next);
     return NextResponse.redirect(url);
-  }
-
-  if (pathname === "/login" && session) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   return NextResponse.next();

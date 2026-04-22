@@ -13,6 +13,7 @@ import { Field, FieldRow } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { todayIso } from "@/lib/dates";
+import { friendlyDataError, logDevError } from "@/lib/errors";
 import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -111,8 +112,8 @@ export function DebtForm({ open, onClose, editing }: Props) {
       onClose();
       form.reset();
     } catch (err) {
-      console.error("Erro ao salvar dívida:", err);
-      toast({ tone: "error", title: "Erro ao salvar" });
+      logDevError("Failed to save debt.", err);
+      toast({ tone: "error", title: "Erro ao salvar", description: friendlyDataError(err) });
     }
   });
 
@@ -122,8 +123,9 @@ export function DebtForm({ open, onClose, editing }: Props) {
       await deleteItem(user.uid, COL.debts, editing.id);
       toast({ tone: "success", title: "Dívida removida" });
       onClose();
-    } catch {
-      toast({ tone: "error", title: "Erro ao excluir" });
+    } catch (err) {
+      logDevError("Failed to delete debt.", err);
+      toast({ tone: "error", title: "Erro ao excluir", description: friendlyDataError(err) });
     }
   };
 

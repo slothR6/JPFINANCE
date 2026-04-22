@@ -15,6 +15,7 @@ import { Field, FieldRow } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { todayIso } from "@/lib/dates";
+import { friendlyDataError, logDevError } from "@/lib/errors";
 import { Trash2 } from "lucide-react";
 
 const schema = z.object({
@@ -85,8 +86,9 @@ export function BillForm({ open, onClose, editing }: Props) {
       }
       onClose();
       form.reset();
-    } catch {
-      toast({ tone: "error", title: "Erro ao salvar" });
+    } catch (err) {
+      logDevError("Failed to save bill.", err);
+      toast({ tone: "error", title: "Erro ao salvar", description: friendlyDataError(err) });
     }
   });
 
@@ -96,8 +98,9 @@ export function BillForm({ open, onClose, editing }: Props) {
       await deleteItem(user.uid, COL.bills, editing.id);
       toast({ tone: "success", title: "Conta excluída" });
       onClose();
-    } catch {
-      toast({ tone: "error", title: "Erro ao excluir" });
+    } catch (err) {
+      logDevError("Failed to delete bill.", err);
+      toast({ tone: "error", title: "Erro ao excluir", description: friendlyDataError(err) });
     }
   };
 

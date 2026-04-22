@@ -8,9 +8,12 @@ import { z } from "zod";
 import { ArrowRight, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useToast } from "@/components/providers/toast-provider";
+import { BrandLogo } from "@/components/branding/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { logDevError } from "@/lib/errors";
+import { safeInternalPath } from "@/lib/safe-redirect";
 
 const signInSchema = z.object({
   email: z.string().email("E-mail inválido"),
@@ -32,6 +35,7 @@ export function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
+  const nextPath = safeInternalPath(params.get("next"));
 
   const form = useForm<{ email: string; password: string; name?: string }>({
     resolver: zodResolver(mode === "signin" ? signInSchema : signUpSchema),
@@ -46,10 +50,9 @@ export function LoginScreen() {
 
   useEffect(() => {
     if (!loading && user) {
-      const next = params.get("next") || "/dashboard";
-      router.replace(next);
+      router.replace(nextPath);
     }
-  }, [loading, user, router, params]);
+  }, [loading, user, router, nextPath]);
 
   const onSubmit = form.handleSubmit(async (values) => {
     setBusy(true);
@@ -60,8 +63,9 @@ export function LoginScreen() {
         await signUp(values.email, values.password, values.name || "");
         toast({ tone: "success", title: "Conta criada", description: "Bem-vindo ao JPFINANCE." });
       }
-      router.replace(params.get("next") || "/dashboard");
+      router.replace(nextPath);
     } catch (err) {
+      logDevError("Firebase sign-in failed", err);
       const message = humanFirebaseError(err);
       toast({ tone: "error", title: "Não foi possível entrar", description: message });
     } finally {
@@ -73,8 +77,9 @@ export function LoginScreen() {
     setGoogleBusy(true);
     try {
       await signInWithGoogle();
-      router.replace(params.get("next") || "/dashboard");
+      router.replace(nextPath);
     } catch (err) {
+      logDevError("Firebase Google sign-in failed", err);
       const message = humanFirebaseError(err);
       toast({ tone: "error", title: "Não foi possível entrar com Google", description: message });
     } finally {
@@ -92,6 +97,7 @@ export function LoginScreen() {
       await resetPassword(email);
       toast({ tone: "success", title: "E-mail enviado", description: "Verifique sua caixa de entrada." });
     } catch (err) {
+      logDevError("Firebase password reset failed", err);
       toast({ tone: "error", title: "Falhou", description: humanFirebaseError(err) });
     }
   };
@@ -104,14 +110,8 @@ export function LoginScreen() {
       </div>
 
       <div className="w-full max-w-md space-y-8">
-        {/* Logo */}
         <div className="flex justify-center">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-fg text-bg shadow-sm">
-              <span className="font-display text-base font-bold">JP</span>
-            </div>
-            <span className="font-display text-2xl font-bold tracking-tight text-fg">JPFINANCE</span>
-          </div>
+          <BrandLogo priority className="h-32 w-72 max-w-full sm:h-36 sm:w-80" />
         </div>
 
         {/* Form card */}

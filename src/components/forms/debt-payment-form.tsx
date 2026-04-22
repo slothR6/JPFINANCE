@@ -13,6 +13,7 @@ import { Field, FieldRow } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { todayIso } from "@/lib/dates";
+import { friendlyDataError, logDevError } from "@/lib/errors";
 
 const schema = z.object({
   amount: z.number().positive(),
@@ -65,8 +66,9 @@ export function DebtPaymentForm({ open, onClose, debt }: Props) {
       toast({ tone: "success", title: "Pagamento registrado" });
       onClose();
       form.reset();
-    } catch {
-      toast({ tone: "error", title: "Erro ao registrar pagamento" });
+    } catch (err) {
+      logDevError("Failed to save debt payment.", err);
+      toast({ tone: "error", title: "Erro ao registrar pagamento", description: friendlyDataError(err) });
     }
   });
 

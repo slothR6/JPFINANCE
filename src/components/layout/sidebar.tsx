@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "./navigation";
 import { cn } from "@/lib/utils";
+import { BrandLogo } from "@/components/branding/brand-logo";
 import { useAuth } from "@/components/providers/auth-provider";
 import { initialsFromName } from "@/lib/utils";
 import { LogOut } from "lucide-react";
@@ -21,15 +22,17 @@ export function Sidebar() {
 
   return (
     <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-hairline bg-surface lg:flex">
-      <div className="flex items-center gap-2.5 border-b border-hairline px-6 py-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-fg text-bg">
-          <span className="font-display text-sm font-semibold">JP</span>
-        </div>
+      <Link
+        href="/dashboard"
+        className="flex items-center gap-3 border-b border-hairline px-5 py-4 transition hover:bg-surface-2/50"
+        aria-label="JPFINANCE - Dashboard"
+      >
+        <BrandLogo variant="mark" className="h-10 w-10 rounded-xl" sizes="40px" />
         <div className="leading-tight">
           <div className="font-display text-sm font-semibold text-fg">JPFINANCE</div>
           <div className="text-2xs text-fg-subtle">seu controle pessoal</div>
         </div>
-      </div>
+      </Link>
 
       <nav className="flex-1 overflow-y-auto px-3 py-5">
         <NavGroup label="Navegação" items={main} pathname={pathname} />

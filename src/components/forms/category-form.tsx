@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { CATEGORY_COLORS } from "@/lib/constants";
+import { friendlyDataError, logDevError } from "@/lib/errors";
 import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -55,11 +56,8 @@ export function CategoryForm({ open, onClose, editing, defaultKind = "expense" }
       onClose();
       form.reset();
     } catch (err) {
-      console.error("Erro ao salvar categoria:", err);
-      const msg = (err as { code?: string })?.code?.includes("permission")
-        ? "Sem permissão. Verifique se as regras do Firestore foram publicadas."
-        : "Erro ao salvar. Verifique o console para detalhes.";
-      toast({ tone: "error", title: "Erro ao salvar", description: msg });
+      logDevError("Failed to save category.", err);
+      toast({ tone: "error", title: "Erro ao salvar", description: friendlyDataError(err) });
     }
   });
 
@@ -70,8 +68,8 @@ export function CategoryForm({ open, onClose, editing, defaultKind = "expense" }
       toast({ tone: "success", title: "Categoria removida" });
       onClose();
     } catch (err) {
-      console.error("Erro ao excluir categoria:", err);
-      toast({ tone: "error", title: "Erro ao excluir" });
+      logDevError("Failed to delete category.", err);
+      toast({ tone: "error", title: "Erro ao excluir", description: friendlyDataError(err) });
     }
   };
 

@@ -14,6 +14,7 @@ import { BillForm } from "@/components/forms/bill-form";
 import { useToast } from "@/components/providers/toast-provider";
 import { COL, updateItem } from "@/services/repository";
 import { daysUntil, formatDateReadable, todayIso } from "@/lib/dates";
+import { friendlyDataError, logDevError } from "@/lib/errors";
 import { formatCurrency } from "@/lib/utils";
 import { sum } from "@/lib/finance";
 import type { Bill } from "@/types";
@@ -42,8 +43,9 @@ export default function ContasPage() {
     try {
       await updateItem<Bill>(user.uid, COL.bills, b.id, { status: "paid", paidAt: todayIso() });
       toast({ tone: "success", title: "Conta marcada como paga" });
-    } catch {
-      toast({ tone: "error", title: "Erro" });
+    } catch (err) {
+      logDevError("Failed to mark bill as paid.", err);
+      toast({ tone: "error", title: "Erro", description: friendlyDataError(err) });
     }
   };
 
