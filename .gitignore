@@ -13,4 +13,6 @@ coverage
 *.tsbuildinfo
 .env
 firestore.rules
+.claude
+.claude/
 

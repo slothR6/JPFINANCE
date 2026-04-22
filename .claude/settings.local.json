@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(node -e \"const l = require\\('C:/Users/pedru/OneDrive/Área de Trabalho/JPFINANCE/node_modules/lucide-react'\\); console.log\\('BanknoteArrowDown:', typeof l.BanknoteArrowDown\\); console.log\\('BanknoteArrowUp:', typeof l.BanknoteArrowUp\\); console.log\\('Banknote:', typeof l.Banknote\\); console.log\\('TrendingUp:', typeof l.TrendingUp\\); console.log\\('TrendingDown:', typeof l.TrendingDown\\); console.log\\('ArrowDownCircle:', typeof l.ArrowDownCircle\\);\")"
-    ]
-  }
-}
