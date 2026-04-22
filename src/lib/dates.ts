@@ -54,10 +54,29 @@ export function formatDateBr(iso?: string) {
   }
 }
 
+export function formatDateShort(iso?: string) {
+  if (!iso) return "—";
+  try {
+    return format(parseISO(iso), "dd/MM", { locale: ptBR });
+  } catch {
+    return iso;
+  }
+}
+
 export function formatDateReadable(iso?: string) {
   if (!iso) return "—";
   try {
     return format(parseISO(iso), "dd 'de' MMM", { locale: ptBR });
+  } catch {
+    return iso;
+  }
+}
+
+export function formatInvoiceMonth(iso?: string) {
+  if (!iso) return "—";
+  try {
+    const label = format(parseISO(iso), "MMM/yyyy", { locale: ptBR }).replace(".", "");
+    return label.charAt(0).toUpperCase() + label.slice(1);
   } catch {
     return iso;
   }

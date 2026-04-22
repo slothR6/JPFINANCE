@@ -14,10 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldRow } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
-import { getCreditCardDueDate, todayIso, formatDateBr } from "@/lib/dates";
+import { getCreditCardDueDate, todayIso, formatDateBr, formatInvoiceMonth } from "@/lib/dates";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { friendlyDataError, logDevError } from "@/lib/errors";
-import { Trash2 } from "lucide-react";
+import { CreditCard as CreditCardIcon, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const schema = z.object({
@@ -240,9 +240,17 @@ export function ExpenseForm({ open, onClose, editing }: Props) {
               ))}
             </Select>
             {creditCardDueAt && (
-              <p className="mt-1.5 text-2xs text-info">
-                Fatura prevista para: <strong>{formatDateBr(creditCardDueAt)}</strong>
-              </p>
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-info/20 bg-info/5 px-3 py-2 text-xs text-info">
+                <CreditCardIcon size={15} className="mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-medium">
+                    Esta compra entrará na Fatura {formatInvoiceMonth(creditCardDueAt)}
+                  </div>
+                  <div className="text-2xs text-info/80">
+                    Vencimento em <strong>{formatDateBr(creditCardDueAt)}</strong>
+                  </div>
+                </div>
+              </div>
             )}
           </Field>
         )}

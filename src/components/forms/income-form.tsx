@@ -4,6 +4,7 @@ import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMemo } from "react";
+import { addMonths } from "date-fns";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useData } from "@/components/providers/data-provider";
 import { useToast } from "@/components/providers/toast-provider";
@@ -14,18 +15,31 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldRow } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
-import { todayIso } from "@/lib/dates";
+import { parseISO, todayIso, toIso } from "@/lib/dates";
 import { friendlyDataError, logDevError } from "@/lib/errors";
 import { Trash2 } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
 
-const schema = z.object({
-  description: z.string().min(1, "Informe uma descrição"),
-  amount: z.number().positive("Valor deve ser maior que zero"),
-  categoryId: z.string().min(1, "Selecione uma categoria"),
-  receivedAt: z.string().min(1, "Data obrigatória"),
-  recurring: z.boolean().optional(),
-  note: z.string().optional(),
-});
+const schema = z
+  .object({
+    description: z.string().min(1, "Informe uma descrição"),
+    amount: z.number().positive("Valor deve ser maior que zero"),
+    categoryId: z.string().min(1, "Selecione uma categoria"),
+    receivedAt: z.string().min(1, "Data obrigatória"),
+    recurring: z.boolean().optional(),
+    installment: z.boolean().optional(),
+    installments: z.coerce.number().int().min(2, "Mínimo de 2 parcelas").max(120, "Máximo de 120 parcelas").optional(),
+    note: z.string().optional(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.installment && (!values.installments || values.installments < 2)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["installments"],
+        message: "Informe pelo menos 2 parcelas",
+      });
+    }
+  });
 
 type FormValues = z.infer<typeof schema>;
 
@@ -54,6 +68,8 @@ export function IncomeForm({ open, onClose, editing }: Props) {
           categoryId: editing.categoryId,
           receivedAt: editing.receivedAt,
           recurring: editing.recurring ?? false,
+          installment: false,
+          installments: 2,
           note: editing.note ?? "",
         }
       : {
@@ -62,19 +78,60 @@ export function IncomeForm({ open, onClose, editing }: Props) {
           categoryId: incomeCategories[0]?.id ?? "",
           receivedAt: todayIso(),
           recurring: false,
+          installment: false,
+          installments: 2,
           note: "",
         },
     resetOptions: { keepDirtyValues: false },
   });
 
+  const installment = form.watch("installment");
+  const installments = Number(form.watch("installments") ?? 2);
+  const amount = Number(form.watch("amount") ?? 0);
+  const installmentCount = Number.isFinite(installments) ? installments : 2;
+
   const onSubmit = form.handleSubmit(async (values) => {
     if (!user) return;
     try {
+      const basePayload = {
+        amount: values.amount,
+        categoryId: values.categoryId,
+        note: values.note || undefined,
+      };
+
       if (editing) {
-        await updateItem<Income>(user.uid, COL.incomes, editing.id, values);
+        await updateItem<Income>(user.uid, COL.incomes, editing.id, {
+          description: values.description,
+          ...basePayload,
+          receivedAt: values.receivedAt,
+          recurring: values.recurring,
+        });
         toast({ tone: "success", title: "Receita atualizada" });
+      } else if (values.installment) {
+        const totalInstallments = values.installments ?? 2;
+        const firstDate = parseISO(values.receivedAt);
+
+        for (let index = 0; index < totalInstallments; index += 1) {
+          await createItem<Omit<Income, "id">>(user.uid, COL.incomes, {
+            description: installmentDescription(values.description, index + 1, totalInstallments),
+            ...basePayload,
+            receivedAt: toIso(addMonths(firstDate, index)),
+            recurring: false,
+          });
+        }
+
+        toast({
+          tone: "success",
+          title: "Receita parcelada registrada",
+          description: `${totalInstallments} parcelas programadas.`,
+        });
       } else {
-        await createItem<Omit<Income, "id">>(user.uid, COL.incomes, values);
+        await createItem<Omit<Income, "id">>(user.uid, COL.incomes, {
+          description: values.description,
+          ...basePayload,
+          receivedAt: values.receivedAt,
+          recurring: values.recurring,
+        });
         toast({ tone: "success", title: "Receita registrada" });
       }
       onClose();
@@ -126,17 +183,58 @@ export function IncomeForm({ open, onClose, editing }: Props) {
         </Field>
 
         <FieldRow>
-          <Field label="Valor" required error={form.formState.errors.amount?.message}>
+          <Field label={installment ? "Valor da parcela" : "Valor"} required error={form.formState.errors.amount?.message}>
             <Controller
               name="amount"
               control={form.control}
               render={({ field }) => <MoneyInput value={field.value} onChange={field.onChange} />}
             />
           </Field>
-          <Field label="Data do recebimento" required error={form.formState.errors.receivedAt?.message}>
+          <Field
+            label={installment ? "Data da primeira parcela" : "Data do recebimento"}
+            required
+            error={form.formState.errors.receivedAt?.message}
+          >
             <Input type="date" {...form.register("receivedAt")} />
           </Field>
         </FieldRow>
+
+        {!editing && (
+          <label className="flex items-start gap-2.5 rounded-lg border border-hairline bg-surface-2/60 p-3.5">
+            <input
+              type="checkbox"
+              className="mt-0.5 rounded"
+              {...form.register("installment", {
+                onChange: (event) => {
+                  if (event.target.checked) form.setValue("recurring", false);
+                },
+              })}
+            />
+            <span className="text-xs">
+              <span className="block font-medium text-fg">Receita parcelada</span>
+              <span className="text-fg-muted">
+                Cria automaticamente uma receita por mês a partir da primeira data.
+              </span>
+            </span>
+          </label>
+        )}
+
+        {!editing && installment && (
+          <FieldRow>
+            <Field label="Número de parcelas" required error={form.formState.errors.installments?.message}>
+              <Input type="number" min={2} max={120} {...form.register("installments")} />
+            </Field>
+            <div className="rounded-lg border border-info/20 bg-info/5 px-3 py-2">
+              <div className="text-2xs text-info/80">Total programado</div>
+              <div className="mt-0.5 text-sm font-semibold text-info tabular-nums">
+                {formatCurrency(amount * installmentCount)}
+              </div>
+              <div className="text-2xs text-info/80">
+                {installmentCount} parcelas de {formatCurrency(amount)}
+              </div>
+            </div>
+          </FieldRow>
+        )}
 
         <Field label="Categoria" required error={form.formState.errors.categoryId?.message}>
           <Select {...form.register("categoryId")}>
@@ -153,14 +251,21 @@ export function IncomeForm({ open, onClose, editing }: Props) {
           <Textarea placeholder="Anotações..." {...form.register("note")} />
         </Field>
 
-        <label className="flex items-start gap-2.5 rounded-lg border border-hairline bg-surface-2/60 p-3.5">
-          <input type="checkbox" className="mt-0.5 rounded" {...form.register("recurring")} />
-          <span className="text-xs">
-            <span className="block font-medium text-fg">Receita recorrente</span>
-            <span className="text-fg-muted">Marque se esta receita se repete mensalmente.</span>
-          </span>
-        </label>
+        {!installment && (
+          <label className="flex items-start gap-2.5 rounded-lg border border-hairline bg-surface-2/60 p-3.5">
+            <input type="checkbox" className="mt-0.5 rounded" {...form.register("recurring")} />
+            <span className="text-xs">
+              <span className="block font-medium text-fg">Receita recorrente</span>
+              <span className="text-fg-muted">Marque se esta receita se repete mensalmente.</span>
+            </span>
+          </label>
+        )}
       </form>
     </Drawer>
   );
+}
+
+function installmentDescription(description: string, installment: number, total: number) {
+  const suffix = ` (${installment}/${total})`;
+  return `${description.slice(0, 140 - suffix.length).trimEnd()}${suffix}`;
 }

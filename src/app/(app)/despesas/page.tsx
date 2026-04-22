@@ -12,14 +12,14 @@ import { Input, Select } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ListRow } from "@/components/layout/list-row";
 import { ExpenseForm } from "@/components/forms/expense-form";
-import { expensesForMonth, sum } from "@/lib/finance";
-import { formatDateReadable, formatMonthLong } from "@/lib/dates";
+import { expensesForMonth, getExpenseCreditCardDueAt, sum } from "@/lib/finance";
+import { formatDateReadable, formatDateShort, formatInvoiceMonth, formatMonthLong } from "@/lib/dates";
 import { formatCurrency } from "@/lib/utils";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import type { Expense } from "@/types";
 
 export default function DespesasPage() {
-  const { expenses, categories, categoryById } = useData();
+  const { expenses, categories, categoryById, creditCardById } = useData();
   const { month } = useMonth();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
@@ -99,6 +99,10 @@ export default function DespesasPage() {
             <ul className="divide-y divide-hairline">
               {filtered.map((e) => {
                 const c = categoryById(e.categoryId);
+                const cardDueAt = getExpenseCreditCardDueAt(
+                  e,
+                  e.creditCardId ? creditCardById(e.creditCardId) : undefined,
+                );
                 return (
                   <li key={e.id}>
                     <ListRow
@@ -110,6 +114,12 @@ export default function DespesasPage() {
                         <>
                           {c && <Badge tone="neutral">{c.name}</Badge>}
                           <Badge tone="neutral">{methodLabel(e.method)}</Badge>
+                          {e.method === "cartao" && cardDueAt && (
+                            <>
+                              <Badge tone="info">Fatura {formatInvoiceMonth(cardDueAt)}</Badge>
+                              <Badge tone="neutral">Vence {formatDateShort(cardDueAt)}</Badge>
+                            </>
+                          )}
                         </>
                       }
                       right={

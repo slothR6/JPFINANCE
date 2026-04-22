@@ -19,10 +19,12 @@ interface Props {
   incomes: Income[];
   expenses: Expense[];
   months?: number;
+  referenceDate?: Date;
+  expenseDate?: (expense: Expense) => string;
 }
 
-export function TrendArea({ incomes, expenses, months = 6 }: Props) {
-  const now = new Date();
+export function TrendArea({ incomes, expenses, months = 6, referenceDate, expenseDate }: Props) {
+  const now = referenceDate ?? new Date();
   const buckets: { key: string; label: string; incomes: number; expenses: number }[] = [];
   for (let i = months - 1; i >= 0; i--) {
     const d = subMonths(now, i);
@@ -45,7 +47,7 @@ export function TrendArea({ incomes, expenses, months = 6 }: Props) {
   }
   for (const e of expenses) {
     try {
-      const d = parseISO(e.paidAt);
+      const d = parseISO(expenseDate?.(e) ?? e.paidAt);
       const key = `${d.getFullYear()}-${d.getMonth()}`;
       const k = idx.get(key);
       if (k !== undefined) buckets[k].expenses += e.amount;

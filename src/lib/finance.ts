@@ -1,5 +1,5 @@
-import type { Bill, Debt, Expense, Income } from "@/types";
-import { isInMonth, type MonthRef } from "@/lib/dates";
+import type { Bill, CreditCard, Debt, Expense, Income } from "@/types";
+import { getCreditCardDueDate, isInMonth, type MonthRef } from "@/lib/dates";
 
 export function sum(values: number[]): number {
   return values.reduce((acc, v) => acc + (Number.isFinite(v) ? v : 0), 0);
@@ -11,6 +11,14 @@ export function incomesForMonth(items: Income[], m: MonthRef) {
 
 export function expensesForMonth(items: Expense[], m: MonthRef) {
   return items.filter((e) => isInMonth(e.paidAt, m));
+}
+
+export function expensesForCompetenceMonth(items: Expense[], creditCards: CreditCard[], m: MonthRef) {
+  const cardMap = new Map(creditCards.map((card) => [card.id, card]));
+  return items.filter((expense) => {
+    const card = expense.creditCardId ? cardMap.get(expense.creditCardId) : undefined;
+    return isInMonth(getExpenseCompetenceDate(expense, card), m);
+  });
 }
 
 export function billsForMonth(items: Bill[], m: MonthRef) {
@@ -43,4 +51,15 @@ export function aggregateByCategory<T extends { categoryId: string; amount: numb
     map.set(it.categoryId, (map.get(it.categoryId) ?? 0) + it.amount);
   }
   return Array.from(map.entries()).map(([categoryId, total]) => ({ categoryId, total }));
+}
+
+export function getExpenseCreditCardDueAt(expense: Expense, creditCard?: CreditCard): string | undefined {
+  if (expense.creditCardDueAt) return expense.creditCardDueAt;
+  if (expense.method !== "cartao" || !creditCard) return undefined;
+  return getCreditCardDueDate(expense.paidAt, creditCard.closingDay, creditCard.dueDay);
+}
+
+export function getExpenseCompetenceDate(expense: Expense, creditCard?: CreditCard): string {
+  if (expense.method !== "cartao") return expense.paidAt;
+  return getExpenseCreditCardDueAt(expense, creditCard) ?? expense.paidAt;
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowDownRight,
   ArrowUpRight,
   CalendarClock,
+  CreditCard as CreditCardIcon,
   Landmark,
   Plus,
   Receipt,
@@ -27,27 +28,68 @@ import { TrendArea } from "@/components/charts/trend-area";
 import { CategoryBars } from "@/components/charts/category-bars";
 import {
   debtRemaining,
-  expensesForMonth,
+  expensesForCompetenceMonth,
+  getExpenseCompetenceDate,
+  getExpenseCreditCardDueAt,
   incomesForMonth,
   sum,
 } from "@/lib/finance";
-import { daysUntil, formatDateReadable, formatMonthLong } from "@/lib/dates";
+import {
+  daysUntil,
+  formatDateReadable,
+  formatDateShort,
+  formatInvoiceMonth,
+  formatMonthLong,
+  monthRange,
+  monthToDate,
+  toIso,
+} from "@/lib/dates";
 import { formatCurrency } from "@/lib/utils";
 import { IncomeForm } from "@/components/forms/income-form";
 import { ExpenseForm } from "@/components/forms/expense-form";
 import { BillForm } from "@/components/forms/bill-form";
 
+type CardInvoiceSummary = {
+  key: string;
+  dueAt: string;
+  cardName: string;
+  cardColor?: string;
+  total: number;
+  count: number;
+};
+
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { incomes, expenses, bills, debts, preferences, categoryById } = useData();
+  const {
+    incomes,
+    expenses,
+    bills,
+    debts,
+    creditCards,
+    preferences,
+    categoryById,
+    creditCardById,
+  } = useData();
   const { month } = useMonth();
 
   const [incomeOpen, setIncomeOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [billOpen, setBillOpen] = useState(false);
 
+  const expenseCompetenceDate = useCallback(
+    (expense: (typeof expenses)[number]) =>
+      getExpenseCompetenceDate(
+        expense,
+        expense.creditCardId ? creditCardById(expense.creditCardId) : undefined,
+      ),
+    [creditCardById],
+  );
+
   const monthIncomes = useMemo(() => incomesForMonth(incomes, month), [incomes, month]);
-  const monthExpenses = useMemo(() => expensesForMonth(expenses, month), [expenses, month]);
+  const monthExpenses = useMemo(
+    () => expensesForCompetenceMonth(expenses, creditCards, month),
+    [expenses, creditCards, month],
+  );
 
   const incomeTotal = sum(monthIncomes.map((i) => i.amount));
   const expenseTotal = sum(monthExpenses.map((e) => e.amount));
@@ -71,6 +113,38 @@ export default function DashboardPage() {
     .filter((b) => b.status !== "paid")
     .sort((a, b) => a.dueAt.localeCompare(b.dueAt))
     .slice(0, 6);
+
+  const upcomingCardInvoices = useMemo<CardInvoiceSummary[]>(() => {
+    const selectedMonthEnd = toIso(monthRange(month).end);
+    const cardMap = new Map(creditCards.map((card) => [card.id, card]));
+    const invoices = new Map<string, CardInvoiceSummary>();
+
+    for (const expense of expenses) {
+      if (expense.method !== "cartao") continue;
+
+      const card = expense.creditCardId ? cardMap.get(expense.creditCardId) : undefined;
+      const dueAt = getExpenseCreditCardDueAt(expense, card);
+      if (!dueAt || dueAt <= selectedMonthEnd) continue;
+
+      const key = `${expense.creditCardId ?? "sem-cartao"}-${dueAt}`;
+      const invoice = invoices.get(key) ?? {
+        key,
+        dueAt,
+        cardName: card?.name ?? "Cartão",
+        cardColor: card?.color,
+        total: 0,
+        count: 0,
+      };
+
+      invoice.total += expense.amount;
+      invoice.count += 1;
+      invoices.set(key, invoice);
+    }
+
+    return Array.from(invoices.values())
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt) || a.cardName.localeCompare(b.cardName))
+      .slice(0, 4);
+  }, [expenses, creditCards, month]);
 
   const activeDebts = debts.filter((d) => !d.archived);
   const debtTotal = sum(activeDebts.map(debtRemaining));
@@ -168,7 +242,12 @@ export default function DashboardPage() {
           </CardHeader>
           <CardBody className="pt-3">
             {hasActivity ? (
-              <TrendArea incomes={incomes} expenses={expenses} />
+              <TrendArea
+                incomes={incomes}
+                expenses={expenses}
+                referenceDate={monthToDate(month)}
+                expenseDate={expenseCompetenceDate}
+              />
             ) : (
               <EmptyState
                 title="Sem lançamentos ainda"
@@ -179,53 +258,107 @@ export default function DashboardPage() {
           </CardBody>
         </Card>
 
-        {/* Próximos vencimentos */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <CardTitle>Próximos vencimentos</CardTitle>
-                <CardSubtitle>Suas contas a pagar</CardSubtitle>
+        <div className="space-y-5">
+          {/* Próximos vencimentos */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Próximos vencimentos</CardTitle>
+                  <CardSubtitle>Suas contas a pagar</CardSubtitle>
+                </div>
+                <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setBillOpen(true)}>
+                  Nova
+                </Button>
               </div>
-              <Button size="sm" variant="ghost" iconLeft={<Plus size={14} />} onClick={() => setBillOpen(true)}>
-                Nova
-              </Button>
-            </div>
-          </CardHeader>
-          <CardBody className="pt-1">
-            {upcoming.length === 0 ? (
-              <EmptyState
-                icon={<CalendarClock size={20} />}
-                title="Nada por aqui"
-                description="Você não tem contas pendentes."
-                className="py-8"
-              />
-            ) : (
-              <ul className="divide-y divide-hairline -mx-5">
-                {upcoming.map((b) => {
-                  const dd = daysUntil(b.dueAt);
-                  const tone = dd < 0 ? "danger" : dd <= 3 ? "warning" : "neutral";
-                  return (
-                    <li key={b.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-fg">{b.description}</div>
-                        <div className="text-2xs text-fg-subtle">{formatDateReadable(b.dueAt)}</div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-medium tabular-nums text-fg">
-                          {formatCurrency(b.amount)}
-                        </span>
-                        <Badge tone={tone}>
-                          {dd < 0 ? `${Math.abs(dd)}d atraso` : dd === 0 ? "Hoje" : `em ${dd}d`}
-                        </Badge>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardBody>
-        </Card>
+            </CardHeader>
+            <CardBody className="pt-1">
+              {upcoming.length === 0 ? (
+                <EmptyState
+                  icon={<CalendarClock size={20} />}
+                  title="Nada por aqui"
+                  description="Você não tem contas pendentes."
+                  className="py-8"
+                />
+              ) : (
+                <ul className="divide-y divide-hairline -mx-5">
+                  {upcoming.map((b) => {
+                    const dd = daysUntil(b.dueAt);
+                    const tone = dd < 0 ? "danger" : dd <= 3 ? "warning" : "neutral";
+                    return (
+                      <li key={b.id} className="flex items-center justify-between gap-3 px-5 py-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-fg">{b.description}</div>
+                          <div className="text-2xs text-fg-subtle">{formatDateReadable(b.dueAt)}</div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-medium tabular-nums text-fg">
+                            {formatCurrency(b.amount)}
+                          </span>
+                          <Badge tone={tone}>
+                            {dd < 0 ? `${Math.abs(dd)}d atraso` : dd === 0 ? "Hoje" : `em ${dd}d`}
+                          </Badge>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Próximas faturas</CardTitle>
+                  <CardSubtitle>Faturas após o mês selecionado</CardSubtitle>
+                </div>
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-info/10 text-info">
+                  <CreditCardIcon size={14} />
+                </div>
+              </div>
+            </CardHeader>
+            <CardBody className="pt-1">
+              {upcomingCardInvoices.length === 0 ? (
+                <EmptyState
+                  icon={<CreditCardIcon size={20} />}
+                  title="Sem faturas futuras"
+                  description="Compras no cartão aparecerão aqui."
+                  className="py-7"
+                />
+              ) : (
+                <ul className="divide-y divide-hairline -mx-5">
+                  {upcomingCardInvoices.map((invoice) => {
+                    return (
+                      <li key={invoice.key} className="flex items-center justify-between gap-3 px-5 py-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span
+                            className="h-8 w-1 shrink-0 rounded-full"
+                            style={{ backgroundColor: invoice.cardColor ?? "hsl(var(--info))" }}
+                          />
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-fg">{invoice.cardName}</div>
+                            <div className="truncate text-2xs text-fg-subtle">
+                              Fatura {formatInvoiceMonth(invoice.dueAt)} · vence {formatDateShort(invoice.dueAt)} ·{" "}
+                              {invoice.count} {invoice.count === 1 ? "compra" : "compras"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          <span className="text-sm font-medium tabular-nums text-fg">
+                            {formatCurrency(invoice.total)}
+                          </span>
+                          <Badge tone="info">{formatInvoiceMonth(invoice.dueAt)}</Badge>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+        </div>
       </div>
 
       {/* SECONDARY ROW — Onde o dinheiro foi + breakdown despesa/gasto */}
@@ -315,6 +448,9 @@ export default function DashboardPage() {
             incomes={monthIncomes}
             expenses={monthExpenses}
             bills={calendarBills}
+            categoryById={categoryById}
+            creditCardById={creditCardById}
+            expenseDate={expenseCompetenceDate}
           />
         </CardBody>
       </Card>
