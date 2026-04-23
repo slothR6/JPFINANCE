@@ -110,4 +110,5 @@ export interface UserPreferences {
   monthlyBudget?: number;
   savingsGoal?: number;
   theme?: "light" | "dark" | "system";
+  hasCompletedOnboarding?: boolean;
 }

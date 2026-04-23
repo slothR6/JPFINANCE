@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CreditCard as CreditCardIcon, LogOut, Pencil, Plus, Target } from "lucide-react";
+import { BookOpen, CreditCard as CreditCardIcon, LogOut, Pencil, Plus, Target } from "lucide-react";
+import { useOnboarding } from "@/components/onboarding/onboarding-controller";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useData } from "@/components/providers/data-provider";
 import { useToast } from "@/components/providers/toast-provider";
@@ -23,6 +24,7 @@ export default function ConfiguracoesPage() {
   const { user, signOut } = useAuth();
   const { categories, creditCards, preferences } = useData();
   const { toast } = useToast();
+  const { openOnboarding } = useOnboarding();
 
   const [name, setName] = useState<string>(preferences?.displayName ?? user?.displayName ?? "");
   const [budget, setBudget] = useState<number>(preferences?.monthlyBudget ?? 0);
@@ -105,6 +107,14 @@ export default function ConfiguracoesPage() {
             </Field>
             <Button variant="outline" onClick={signOut} iconLeft={<LogOut size={14} />}>
               Sair da conta
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={openOnboarding}
+              iconLeft={<BookOpen size={14} />}
+              className="text-fg-muted"
+            >
+              Ver tutorial novamente
             </Button>
           </CardBody>
         </Card>
