@@ -2,20 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_ITEMS } from "./navigation";
 import { cn } from "@/lib/utils";
+import { NAV_ITEMS } from "./navigation";
 
 export function MobileNav() {
   const pathname = usePathname();
-  const items = NAV_ITEMS.filter((i) => i.group === "main").slice(0, 4);
-  const settings = NAV_ITEMS.find((i) => i.href === "/configuracoes")!;
-  const visible = [...items, settings];
+  const items = NAV_ITEMS.filter((item) => item.group === "main").slice(0, 4);
+  const ecosystem = NAV_ITEMS.find((item) => item.href === "/ecossistema");
+  const settings = NAV_ITEMS.find((item) => item.href === "/configuracoes")!;
+  const tail = pathname.startsWith("/ecossistema") && ecosystem ? ecosystem : settings;
+  const visible = [...items, tail];
+
   return (
     <nav className="sticky bottom-0 z-30 border-t border-hairline bg-surface/90 backdrop-blur lg:hidden">
       <ul className="grid grid-cols-5">
         {visible.map((item) => {
           const active = pathname.startsWith(item.href);
           const Icon = item.icon;
+
           return (
             <li key={item.href}>
               <Link

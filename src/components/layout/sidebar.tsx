@@ -1,23 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import { LogOut } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { NAV_ITEMS } from "./navigation";
-import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/branding/brand-logo";
 import { useAuth } from "@/components/providers/auth-provider";
-import { initialsFromName } from "@/lib/utils";
-import { LogOut } from "lucide-react";
+import { cn, initialsFromName } from "@/lib/utils";
+import { NAV_ITEMS } from "./navigation";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
 
-  const main = NAV_ITEMS.filter((i) => i.group === "main");
-  const analytics = NAV_ITEMS.filter((i) => i.group === "analytics");
-  const setup = NAV_ITEMS.filter((i) => i.group === "setup");
+  const main = NAV_ITEMS.filter((item) => item.group === "main");
+  const analytics = NAV_ITEMS.filter((item) => item.group === "analytics");
+  const ecosystem = NAV_ITEMS.filter((item) => item.group === "ecosystem");
+  const setup = NAV_ITEMS.filter((item) => item.group === "setup");
 
-  const name = user?.displayName || user?.email || "Você";
+  const name = user?.displayName || user?.email || "Voce";
   const initials = initialsFromName(user?.displayName || user?.email || "");
 
   return (
@@ -35,8 +35,11 @@ export function Sidebar() {
       </Link>
 
       <nav className="flex-1 overflow-y-auto px-3 py-5">
-        <NavGroup label="Navegação" items={main} pathname={pathname} />
-        <NavGroup label="Análise" items={analytics} pathname={pathname} />
+        <NavGroup label="Navegacao" items={main} pathname={pathname} />
+        <NavGroup label="Analise" items={analytics} pathname={pathname} />
+        {ecosystem.length > 0 ? (
+          <NavGroup label="Ecossistema" items={ecosystem} pathname={pathname} />
+        ) : null}
         <NavGroup label="Conta" items={setup} pathname={pathname} />
       </nav>
 
@@ -81,6 +84,7 @@ function NavGroup({
         {items.map((item) => {
           const active = pathname.startsWith(item.href);
           const Icon = item.icon;
+
           return (
             <li key={item.href}>
               <Link
